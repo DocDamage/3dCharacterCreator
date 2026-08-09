@@ -6,9 +6,17 @@ Unreal Engine 5.7 character-creator prototype with a dark editor-style UI system
 
 - Main Dashboard with live preview, recent projects, quick actions, and status messaging.
 - Character Creator body/face workspace with preview, proportion controls, save state, and back navigation.
-- Event-driven `UCharacterCreatorSession` for screen and status changes.
+- Authoritative `UCharacterCreatorSession` state for appearance parameters, presets, soft asset references, status, and screen routing.
+- Game-instance-owned `UCharacterCreatorSubsystem` so the session is not tied to a HUD/widget lifetime.
+- Event-driven appearance refresh with real slider controls and explicit widget teardown unbinding.
 - Explicit UI-only input mode, keyboard focus ownership, and teardown cleanup.
-- Reusable C++ UMG styling helpers for panels, labels, buttons, and progress bars.
+- Reusable C++ UMG styling helpers for panels, labels, buttons, tabs, sliders, modals, focus, and viewport-safe popup placement.
+
+## Phase status
+
+Phase 0 (UI and data foundation) is implemented as the current base layer. The runtime module remains intentionally unified until later phases establish enough preview, editor tooling, and persistence boundaries to justify a split.
+
+The current session owns mutations; widgets only display state and forward user intent through session methods. Phase 1 will connect `FCharacterAssetReferences` to a real preview actor and asynchronous asset loading.
 
 ## Run
 

@@ -1,9 +1,11 @@
 #include "CharacterCreatorHUD.h"
 
 #include "Blueprint/UserWidget.h"
+#include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
 #include "UI/CharacterCreatorRootWidget.h"
 #include "UI/CharacterCreatorSession.h"
+#include "UI/CharacterCreatorSubsystem.h"
 
 void ACharacterCreatorHUD::BeginPlay()
 {
@@ -15,7 +17,14 @@ void ACharacterCreatorHUD::BeginPlay()
         return;
     }
 
-    Session = NewObject<UCharacterCreatorSession>(this);
+    UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+    CharacterCreatorSubsystem = GameInstance ? GameInstance->GetSubsystem<UCharacterCreatorSubsystem>() : nullptr;
+    Session = CharacterCreatorSubsystem ? CharacterCreatorSubsystem->GetSession() : nullptr;
+    if (!Session)
+    {
+        return;
+    }
+
     RootWidget = CreateWidget<UCharacterCreatorRootWidget>(PlayerController, UCharacterCreatorRootWidget::StaticClass());
     if (!RootWidget)
     {
@@ -41,9 +50,10 @@ void ACharacterCreatorHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
     if (Session)
     {
-        Session->Shutdown();
         Session = nullptr;
     }
+
+    CharacterCreatorSubsystem = nullptr;
 
     if (APlayerController* PlayerController = GetOwningPlayerController())
     {

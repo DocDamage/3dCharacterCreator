@@ -1,88 +1,60 @@
 #include "UI/CharacterCreatorRootWidget.h"
 
 #include "Blueprint/WidgetTree.h"
-#include "Components/Border.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
-#include "Components/CanvasPanelSlot.h"
-#include "Components/ProgressBar.h"
 #include "Components/ScaleBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/WidgetSwitcher.h"
-#include "Fonts/SlateFontInfo.h"
-#include "Styling/SlateColor.h"
+
+#include "UI/CharacterCreatorUIFramework.h"
 
 namespace CharacterCreatorUI
 {
-    const FLinearColor Ink(0.027f, 0.063f, 0.086f, 1.0f);
-    const FLinearColor Surface(0.055f, 0.098f, 0.129f, 1.0f);
-    const FLinearColor SurfaceRaised(0.082f, 0.145f, 0.188f, 1.0f);
-    const FLinearColor SurfaceMuted(0.043f, 0.086f, 0.118f, 1.0f);
-    const FLinearColor Blue(0.090f, 0.470f, 1.0f, 1.0f);
-    const FLinearColor Gold(0.790f, 0.655f, 0.365f, 1.0f);
-    const FLinearColor Text(0.910f, 0.940f, 0.950f, 1.0f);
-    const FLinearColor Muted(0.550f, 0.650f, 0.710f, 1.0f);
-    const FLinearColor Success(0.300f, 0.750f, 0.560f, 1.0f);
-    const FLinearColor Danger(0.820f, 0.360f, 0.390f, 1.0f);
+    const FCharacterCreatorStylePalette& Palette = FCharacterCreatorUIStyle::GetPalette();
+    const FLinearColor& Ink = Palette.Ink;
+    const FLinearColor& Surface = Palette.Surface;
+    const FLinearColor& SurfaceRaised = Palette.SurfaceRaised;
+    const FLinearColor& SurfaceMuted = Palette.SurfaceMuted;
+    const FLinearColor& Blue = Palette.Blue;
+    const FLinearColor& Gold = Palette.Gold;
+    const FLinearColor& Text = Palette.Text;
+    const FLinearColor& Muted = Palette.Muted;
+    const FLinearColor& Success = Palette.Success;
 
     UCanvasPanelSlot* Place(UCanvasPanel* Canvas, UWidget* Widget, const FVector2D& Position, const FVector2D& Size)
     {
-        UCanvasPanelSlot* Slot = Canvas->AddChildToCanvas(Widget);
-        Slot->SetAnchors(FAnchors(0.0f, 0.0f, 0.0f, 0.0f));
-        Slot->SetAlignment(FVector2D::ZeroVector);
-        Slot->SetPosition(Position);
-        Slot->SetSize(Size);
-        return Slot;
-    }
-
-    UBorder* Panel(UWidgetTree* Tree, const FLinearColor& Color)
-    {
-        UBorder* Result = Tree->ConstructWidget<UBorder>();
-        Result->SetBrushColor(Color);
-        return Result;
+        return FCharacterCreatorUIFactory::Place(Canvas, Widget, Position, Size);
     }
 
     UTextBlock* Label(UWidgetTree* Tree, const FString& Value, int32 FontSize, const FLinearColor& Color)
     {
-        UTextBlock* Result = Tree->ConstructWidget<UTextBlock>();
-        Result->SetText(FText::FromString(Value));
-        FSlateFontInfo Font = Result->GetFont();
-        Font.Size = FontSize;
-        Result->SetFont(Font);
-        Result->SetColorAndOpacity(FSlateColor(Color));
-        return Result;
+        return FCharacterCreatorUIFactory::MakeLabel(Tree, Value, FontSize, Color);
     }
 
-    UButton* Button(UWidgetTree* Tree, const FString& Value, const FLinearColor& Background, const FLinearColor& Foreground, int32 FontSize = 12)
+    UCharacterCreatorPanelWidget* Panel(UWidgetTree* Tree, const FLinearColor& Color)
     {
-        UButton* Result = Tree->ConstructWidget<UButton>();
+        return FCharacterCreatorUIFactory::MakePanel(Tree, Color);
+    }
+
+    UCharacterCreatorButtonWidget* Button(UWidgetTree* Tree, const FString& Value, const FLinearColor& Background, const FLinearColor& Foreground, int32 FontSize = 12)
+    {
+        UCharacterCreatorButtonWidget* Result = Tree->ConstructWidget<UCharacterCreatorButtonWidget>();
         Result->SetBackgroundColor(Background);
         Result->SetColorAndOpacity(FLinearColor::White);
-        Result->AddChild(Label(Tree, Value, FontSize, Foreground));
+        Result->AddChild(FCharacterCreatorUIFactory::MakeLabel(Tree, Value, FontSize, Foreground));
         return Result;
     }
 
     void AddLabel(UWidgetTree* Tree, UCanvasPanel* Canvas, const FString& Name, const FString& Value, const FVector2D& Position, const FVector2D& Size, int32 FontSize, const FLinearColor& Color)
     {
-        UTextBlock* TextWidget = Label(Tree, Value, FontSize, Color);
-        TextWidget->Rename(*Name);
-        Place(Canvas, TextWidget, Position, Size);
+        FCharacterCreatorUIFactory::AddLabel(Tree, Canvas, Name, Value, Position, Size, FontSize, Color);
     }
 
     void AddPanel(UWidgetTree* Tree, UCanvasPanel* Canvas, const FString& Name, const FVector2D& Position, const FVector2D& Size, const FLinearColor& Color)
     {
-        UBorder* Border = Panel(Tree, Color);
-        Border->Rename(*Name);
-        Place(Canvas, Border, Position, Size);
-    }
-
-    void AddProgress(UWidgetTree* Tree, UCanvasPanel* Canvas, const FVector2D& Position, const FVector2D& Size, float Percent, const FLinearColor& FillColor)
-    {
-        UProgressBar* Progress = Tree->ConstructWidget<UProgressBar>();
-        Progress->SetPercent(Percent);
-        Progress->SetFillColorAndOpacity(FillColor);
-        Place(Canvas, Progress, Position, Size);
+        FCharacterCreatorUIFactory::AddPanel(Tree, Canvas, Name, Position, Size, Color);
     }
 }
 
@@ -106,8 +78,10 @@ void UCharacterCreatorRootWidget::NativeConstruct()
     {
         Session->OnScreenChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplyScreen);
         Session->OnStatusChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplyStatus);
+        Session->OnAppearanceChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplyAppearance);
         ApplyScreen(Session->GetScreen());
         ApplyStatus(Session->GetStatusMessage());
+        ApplyAppearance(Session->GetAppearanceStateNative());
     }
 }
 
@@ -117,6 +91,7 @@ void UCharacterCreatorRootWidget::NativeDestruct()
     {
         Session->OnScreenChanged.RemoveAll(this);
         Session->OnStatusChanged.RemoveAll(this);
+        Session->OnAppearanceChanged.RemoveAll(this);
     }
 
     Super::NativeDestruct();
@@ -249,20 +224,36 @@ void UCharacterCreatorRootWidget::BuildCharacterCreator(UCanvasPanel* Screen)
     AddLabel(WidgetTree, Screen, TEXT("InspectorHeading"), TEXT("BODY PROPORTIONS"), FVector2D(1012.0f, 96.0f), FVector2D(260.0f, 20.0f), 10, Muted);
     AddLabel(WidgetTree, Screen, TEXT("InspectorHint"), TEXT("Adjust values and preview changes instantly."), FVector2D(1012.0f, 124.0f), FVector2D(350.0f, 20.0f), 10, Muted);
 
-    const TArray<TPair<FString, float>> Sliders = {
-        {TEXT("Height"), 0.56f},
-        {TEXT("Shoulder Width"), 0.64f},
-        {TEXT("Arm Length"), 0.48f},
-        {TEXT("Leg Length"), 0.60f},
-        {TEXT("Head Scale"), 0.42f}
+    BodyParameterSliders.Reset();
+    BodyParameterValueLabels.Reset();
+
+    const FCharacterAppearanceState InitialAppearance = Session ? Session->GetAppearanceStateNative() : FCharacterAppearanceState();
+    const TArray<TPair<ECharacterCreatorParameter, FString>> ParameterDefinitions = {
+        {ECharacterCreatorParameter::Height, TEXT("Height")},
+        {ECharacterCreatorParameter::ShoulderWidth, TEXT("Shoulder Width")},
+        {ECharacterCreatorParameter::ArmLength, TEXT("Arm Length")},
+        {ECharacterCreatorParameter::LegLength, TEXT("Leg Length")},
+        {ECharacterCreatorParameter::HeadScale, TEXT("Head Scale")}
     };
 
     float SliderY = 182.0f;
-    for (const TPair<FString, float>& Slider : Sliders)
+    for (const TPair<ECharacterCreatorParameter, FString>& ParameterDefinition : ParameterDefinitions)
     {
-        AddLabel(WidgetTree, Screen, TEXT("InspectorLabel_") + Slider.Key, Slider.Key.ToUpper(), FVector2D(1012.0f, SliderY), FVector2D(220.0f, 18.0f), 10, Text);
-        AddLabel(WidgetTree, Screen, TEXT("InspectorValue_") + Slider.Key, FString::Printf(TEXT("%.2f"), Slider.Value), FVector2D(1354.0f, SliderY), FVector2D(52.0f, 18.0f), 10, Gold);
-        AddProgress(WidgetTree, Screen, FVector2D(1012.0f, SliderY + 28.0f), FVector2D(352.0f, 10.0f), Slider.Value, Gold);
+        const FString ParameterName = ParameterDefinition.Value;
+        const float InitialValue = InitialAppearance.GetParameterValue(ParameterDefinition.Key);
+
+        AddLabel(WidgetTree, Screen, TEXT("InspectorLabel_") + ParameterName, ParameterName.ToUpper(), FVector2D(1012.0f, SliderY), FVector2D(220.0f, 18.0f), 10, Text);
+
+        UTextBlock* ValueLabel = Label(WidgetTree, FString::Printf(TEXT("%.2f"), InitialValue), 10, Gold);
+        ValueLabel->Rename(*(TEXT("InspectorValue_") + ParameterName));
+        Place(Screen, ValueLabel, FVector2D(1354.0f, SliderY), FVector2D(52.0f, 18.0f));
+        BodyParameterValueLabels.Add(ValueLabel);
+
+        UCharacterCreatorSliderWidget* Slider = FCharacterCreatorUIFactory::MakeSlider(WidgetTree, ParameterDefinition.Key, InitialValue);
+        Slider->OnParameterValueChanged.AddUObject(this, &UCharacterCreatorRootWidget::HandleBodyParameterChanged);
+        Place(Screen, Slider, FVector2D(1012.0f, SliderY + 24.0f), FVector2D(352.0f, 18.0f));
+        BodyParameterSliders.Add(Slider);
+
         SliderY += 70.0f;
     }
 
@@ -294,12 +285,12 @@ void UCharacterCreatorRootWidget::ApplyScreen(ECharacterCreatorScreen NewScreen)
     {
         if (BackToDashboardButton)
         {
-            BackToDashboardButton->SetKeyboardFocus();
+            UCharacterCreatorUIHelpers::FocusWidget(BackToDashboardButton);
         }
     }
     else if (NewCharacterButton)
     {
-        NewCharacterButton->SetKeyboardFocus();
+        UCharacterCreatorUIHelpers::FocusWidget(NewCharacterButton);
     }
 }
 
@@ -313,6 +304,36 @@ void UCharacterCreatorRootWidget::ApplyStatus(const FText& NewStatus)
     if (CharacterStatusText && !NewStatus.IsEmpty())
     {
         CharacterStatusText->SetText(NewStatus);
+    }
+}
+
+void UCharacterCreatorRootWidget::ApplyAppearance(const FCharacterAppearanceState& NewAppearance)
+{
+    bRefreshingAppearance = true;
+
+    const int32 ControlCount = FMath::Min(BodyParameterSliders.Num(), BodyParameterValueLabels.Num());
+    for (int32 Index = 0; Index < ControlCount; ++Index)
+    {
+        if (UCharacterCreatorSliderWidget* Slider = BodyParameterSliders[Index])
+        {
+            const float Value = NewAppearance.GetParameterValue(Slider->GetParameter());
+            Slider->SetValue(Value);
+
+            if (UTextBlock* ValueLabel = BodyParameterValueLabels[Index])
+            {
+                ValueLabel->SetText(FText::FromString(FString::Printf(TEXT("%.2f"), Value)));
+            }
+        }
+    }
+
+    bRefreshingAppearance = false;
+}
+
+void UCharacterCreatorRootWidget::HandleBodyParameterChanged(ECharacterCreatorParameter Parameter, float Value)
+{
+    if (!bRefreshingAppearance && Session)
+    {
+        Session->SetParameterValue(Parameter, Value);
     }
 }
 

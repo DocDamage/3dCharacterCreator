@@ -6,6 +6,7 @@
 
 class UCharacterCreatorRootWidget;
 class UCharacterCreatorSession;
+class UCharacterCreatorSubsystem;
 
 UCLASS()
 class THREEDCHARACTER_API ACharacterCreatorHUD : public AHUD
@@ -19,6 +20,9 @@ protected:
 private:
     UPROPERTY()
     TObjectPtr<UCharacterCreatorSession> Session;
+
+    UPROPERTY()
+    TObjectPtr<UCharacterCreatorSubsystem> CharacterCreatorSubsystem;
 
     UPROPERTY()
     TObjectPtr<UCharacterCreatorRootWidget> RootWidget;

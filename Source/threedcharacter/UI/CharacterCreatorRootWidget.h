@@ -8,12 +8,12 @@
 class UBorder;
 class UButton;
 class UCanvasPanel;
-class UProgressBar;
 class UScaleBox;
 class USizeBox;
 class UTextBlock;
 class UWidget;
 class UWidgetSwitcher;
+class UCharacterCreatorSliderWidget;
 
 UCLASS()
 class THREEDCHARACTER_API UCharacterCreatorRootWidget : public UUserWidget
@@ -33,6 +33,8 @@ private:
     void BuildCharacterCreator(UCanvasPanel* Screen);
     void ApplyScreen(ECharacterCreatorScreen NewScreen);
     void ApplyStatus(const FText& NewStatus);
+    void ApplyAppearance(const FCharacterAppearanceState& NewAppearance);
+    void HandleBodyParameterChanged(ECharacterCreatorParameter Parameter, float Value);
 
     UFUNCTION()
     void HandleNewCharacterClicked();
@@ -76,5 +78,12 @@ private:
     UPROPERTY()
     TObjectPtr<UTextBlock> CharacterStatusText;
 
+    UPROPERTY()
+    TArray<TObjectPtr<UCharacterCreatorSliderWidget>> BodyParameterSliders;
+
+    UPROPERTY()
+    TArray<TObjectPtr<UTextBlock>> BodyParameterValueLabels;
+
     bool bLayoutBuilt = false;
+    bool bRefreshingAppearance = false;
 };
