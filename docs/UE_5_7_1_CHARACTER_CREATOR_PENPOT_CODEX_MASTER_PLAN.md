@@ -20,13 +20,13 @@
 >
 > **Present as foundation or scaffold:** most named workspaces are routed C++ screens with reusable panels, labels, command buttons, and status summaries. Their domain operations are not yet implemented: Blend Space/Animation Blueprint/montage generation, retarget execution, socket and rig editing, physics simulation, gameplay movement/combat, LOD metrics, asset browsing/import, randomization, settings persistence, portrait capture, and Unreal package/Blueprint/Data Asset export.
 >
-> **P00 evidence present:** Penpot MCP verification and read/write/delete acceptance evidence are recorded in `docs/penpot/P00_PENPOT_MCP_ACCEPTANCE.md`. The connected editable file is `New File 1`; the requested P01–P04 audit and design-system documents, visual comparison evidence, and a complete gamepad focus graph remain outstanding. The reference directory is present and contains the expected 39 individual screens plus 2 contact sheets; no ZIP was found.
+> **P00/P01 evidence present:** Penpot MCP acceptance evidence is recorded in `docs/penpot/P00_PENPOT_MCP_ACCEPTANCE.md`. The 39-screen matrix, conflict report, and missing-state report are recorded in `docs/penpot/P01_REFERENCE_SCREEN_MATRIX.md`, `docs/penpot/P01_REFERENCE_CONFLICT_REPORT.md`, and `docs/penpot/P01_MISSING_STATE_REPORT.md`. The connected editable file is `New File 1`; P02–P04 design-system and flow handoff documents, visual comparison evidence, and a complete gamepad focus graph remain outstanding. The reference directory contains 39 individual screens plus 2 contact sheets; no ZIP was found.
 >
 > **Verification snapshot:** `Build.bat threedcharacterEditor Win64 Development` succeeded; headless `Automation RunTests CharacterCreator` found and passed 4 tests: `CharacterCreator.Export.Contract`, `CharacterCreator.Import.FreeAnimationsPack`, `CharacterCreator.Session.Foundation`, and `CharacterCreator.UIAndSave.Contract`. These tests verify contracts and content validation, not visual completeness or full Unreal authoring behavior.
 
 ## Current implementation position
 
-The project is at the transition from foundation work to functional workspace implementation. P00 is complete with a recorded Penpot read/write/delete acceptance run; P01 remains incomplete until the full reference audit is documented. In parallel, the C++ runtime has already reached early P05–P17 coverage as a deliberately unified module. Treat every routed workspace as **implemented foundation** until its domain behavior, visual fidelity, input states, and verification evidence are completed.
+The project is at the transition from foundation work to functional workspace implementation. P00 and P01 are complete with recorded Penpot acceptance and reference-audit evidence; P02–P04 remain the next design-source work. In parallel, the C++ runtime has already reached early P05–P17 coverage as a deliberately unified module. Treat every routed workspace as **implemented foundation** until its domain behavior, visual fidelity, input states, and verification evidence are completed.
 
 ### Current evidence map
 
@@ -2073,7 +2073,7 @@ Exit criteria:
 
 ## P01 — Reference Audit
 
-**Current status: Partial.** The expanded reference directory contains the expected 39 individual screens and 2 contact sheets. The ZIP, screen matrix, duplicate/conflict report, missing-state report, and per-screen audit evidence are absent.
+**Current status: Complete.** All 39 individual references and both supplementary contact sheets are catalogued. The matrix, conflict report, and missing-state report are in `docs/penpot/`; no ZIP was present to compare.
 
 Tasks:
 
@@ -2434,7 +2434,7 @@ Exit criteria:
 
 ## P19 — Completion Evidence
 
-**Current status: Not started.** Only this master plan exists under `docs/`; the requested screen matrix, design-system, component inventory, user-flow, Unreal handoff, and completion-evidence documents have not been created.
+**Current status: Partial.** P00 and P01 evidence documents now exist under `docs/penpot/`. The design-system, component inventory, user-flow, Unreal handoff, and completion-evidence documents remain to be created.
 
 Tasks:
 
@@ -2499,7 +2499,7 @@ A screen is complete only when all applicable items pass:
 
 # 63. Overall Acceptance Criteria
 
-**Current status: Not achieved.** The repository has 39/39 individual reference images, 21/21 declared runtime screens routable, 4/4 current automation tests passing, and a verified UE 5.7 editor build. It has 0 verified Penpot MCP acceptance runs, 0 editable Penpot pages evidenced in this repository, 0 of the 6 requested Penpot handoff/evidence documents, and no complete Unreal authoring/export pipeline. The criteria below remain the definition of done, not a claim that the current slice satisfies them.
+**Current status: Not achieved.** The repository has 39/39 individual references audited, 39 native Penpot screen boards structurally scanned, 21/21 declared runtime screens routable, 4/4 current automation tests passing, and a verified UE 5.7 editor build. It has 1 verified Penpot MCP acceptance run and 4 P00/P01 evidence documents, while the P02–P04 design-system/flow documents, visual comparison evidence, complete gamepad focus graph, and Unreal authoring/export pipeline remain incomplete. The criteria below remain the definition of done, not a claim that the current slice satisfies them.
 
 The project design phase is not complete until:
 
@@ -2550,10 +2550,9 @@ The original “start with P00” recommendation is still valid as a prerequisit
 
 ## Immediate sequence
 
-1. **P01 — Reference Audit:** use the present directory `UE_5_7_1_Character_Creator_ALL_UI_UX_Screens\`, record all 39 individual references, map the 2 contact sheets as supplementary, and create the screen matrix, conflict report, and missing-state report. There is no ZIP path to record in the current repository.
-2. **P02–P04 — Product Architecture, Foundations, Components:** reconcile the existing C++ runtime shell with the Penpot source of truth and create the missing design-system/component/flow documentation.
-3. **P08 — Animation functional slice:** implement one complete source-to-Sidekick retarget path, then use that path to validate locomotion, Blend Space, Animation Blueprint, and preview behavior before expanding the authoring surface.
-4. **P14 — Validation and export:** extend the current JSON manifest foundation into real Unreal deliverables only after the animation and asset contracts are real.
+1. **P02–P04 — Product Architecture, Foundations, Components:** reconcile the existing C++ runtime shell with the Penpot source of truth and create the missing design-system/component/flow documentation.
+2. **P08 — Animation functional slice:** implement one complete source-to-Sidekick retarget path, then use that path to validate locomotion, Blend Space, Animation Blueprint, and preview behavior before expanding the authoring surface.
+3. **P14 — Validation and export:** extend the current JSON manifest foundation into real Unreal deliverables only after the animation and asset contracts are real.
 
 ## Required next handoff
 
