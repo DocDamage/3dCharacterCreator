@@ -1,0 +1,31 @@
+# Unreal Engine generated output
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+
+# IDE and local tooling
+.vs/
+.vscode/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Build and platform output
+Build/
+Platforms/*/Binaries/
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# Logs and local secrets
+*.log
+.env
+.env.*
+!.env.example
+
+# OS metadata
+.DS_Store
+Thumbs.db
