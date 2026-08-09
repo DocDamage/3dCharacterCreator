@@ -54,6 +54,39 @@ enum class ECharacterCreatorParameter : uint8
 };
 
 UENUM(BlueprintType)
+enum class ECharacterCreatorFaceAdvancedParameter : uint8
+{
+    CheekWidth,
+    ChinDepth,
+    EyeSpacing,
+    EyeHeight,
+    LipFullness,
+    EarSize,
+    NasolabialDepth
+};
+
+UENUM(BlueprintType)
+enum class ECharacterCreatorGroomingParameter : uint8
+{
+    SkinRoughness,
+    SkinDetail,
+    HairLength,
+    HairDensity,
+    HairRoughness
+};
+
+UENUM(BlueprintType)
+enum class ECharacterCreatorClothingSlot : uint8
+{
+    Head,
+    Torso,
+    Legs,
+    Feet,
+    Gloves,
+    Cape
+};
+
+UENUM(BlueprintType)
 enum class ECharacterCreatorAssetLoadState : uint8
 {
     Unassigned,
@@ -199,6 +232,84 @@ struct THREEDCHARACTER_API FCharacterCreatorAnimationState
 };
 
 USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorFaceAdvancedState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
+    float CheekWidth = 0.50f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
+    float ChinDepth = 0.50f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
+    float EyeSpacing = 0.50f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
+    float EyeHeight = 0.50f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
+    float LipFullness = 0.50f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
+    float EarSize = 0.50f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
+    float NasolabialDepth = 0.50f;
+
+    float GetValue(ECharacterCreatorFaceAdvancedParameter Parameter) const;
+    void SetValue(ECharacterCreatorFaceAdvancedParameter Parameter, float Value);
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorGroomingState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Grooming")
+    float SkinRoughness = 0.50f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Grooming")
+    float SkinDetail = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Grooming")
+    float HairLength = 0.45f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Grooming")
+    float HairDensity = 0.70f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Grooming")
+    float HairRoughness = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Grooming")
+    FName HairStyle = TEXT("BaseHair01");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Grooming")
+    FName SkinProfile = TEXT("Natural");
+
+    float GetValue(ECharacterCreatorGroomingParameter Parameter) const;
+    void SetValue(ECharacterCreatorGroomingParameter Parameter, float Value);
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorClothingState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Clothing")
+    TMap<ECharacterCreatorClothingSlot, FSoftObjectPath> SlotAssets;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Clothing")
+    TMap<FName, FSoftObjectPath> Accessories;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Clothing")
+    bool bUseLayeredClothing = true;
+
+    FSoftObjectPath GetSlotAsset(ECharacterCreatorClothingSlot Slot) const;
+    void SetSlotAsset(ECharacterCreatorClothingSlot Slot, const FSoftObjectPath& AssetPath);
+};
+
+USTRUCT(BlueprintType)
 struct THREEDCHARACTER_API FCharacterCreatorOnboardingState
 {
     GENERATED_BODY()
@@ -218,7 +329,7 @@ struct THREEDCHARACTER_API FCharacterAppearanceState
 {
     GENERATED_BODY()
 
-    static constexpr int32 CurrentVersion = 1;
+    static constexpr int32 CurrentVersion = 2;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|State")
     int32 Version = CurrentVersion;
@@ -264,6 +375,15 @@ struct THREEDCHARACTER_API FCharacterAppearanceState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
     float MouthWidth = 0.50f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Face")
+    FCharacterCreatorFaceAdvancedState AdvancedFace;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Grooming")
+    FCharacterCreatorGroomingState Grooming;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Clothing")
+    FCharacterCreatorClothingState Clothing;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Materials")
     FLinearColor SkinColor = FLinearColor(0.34f, 0.27f, 0.19f, 1.0f);
@@ -350,6 +470,36 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Appearance")
     void RevertAppearanceChanges();
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Face")
+    void SetAdvancedFaceValue(ECharacterCreatorFaceAdvancedParameter Parameter, float Value);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Face")
+    float GetAdvancedFaceValue(ECharacterCreatorFaceAdvancedParameter Parameter) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Grooming")
+    void SetGroomingValue(ECharacterCreatorGroomingParameter Parameter, float Value);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Grooming")
+    float GetGroomingValue(ECharacterCreatorGroomingParameter Parameter) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Grooming")
+    void SetHairStyle(FName StyleId);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Grooming")
+    void SetSkinProfile(FName ProfileId);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Clothing")
+    void SetClothingAsset(ECharacterCreatorClothingSlot Slot, const FSoftObjectPath& AssetPath);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Clothing")
+    FSoftObjectPath GetClothingAsset(ECharacterCreatorClothingSlot Slot) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Clothing")
+    void SetAccessoryAsset(FName AccessoryId, const FSoftObjectPath& AssetPath);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Clothing")
+    FSoftObjectPath GetAccessoryAsset(FName AccessoryId) const;
 
     UFUNCTION(BlueprintPure, Category = "Character Creator|Appearance")
     bool HasUnsavedChanges() const { return AppearanceState.bHasUnsavedChanges; }

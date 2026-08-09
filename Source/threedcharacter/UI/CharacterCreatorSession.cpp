@@ -24,6 +24,85 @@ FCharacterCreatorAnimationState::FCharacterCreatorAnimationState()
 {
 }
 
+float FCharacterCreatorFaceAdvancedState::GetValue(ECharacterCreatorFaceAdvancedParameter Parameter) const
+{
+    switch (Parameter)
+    {
+    case ECharacterCreatorFaceAdvancedParameter::CheekWidth: return CheekWidth;
+    case ECharacterCreatorFaceAdvancedParameter::ChinDepth: return ChinDepth;
+    case ECharacterCreatorFaceAdvancedParameter::EyeSpacing: return EyeSpacing;
+    case ECharacterCreatorFaceAdvancedParameter::EyeHeight: return EyeHeight;
+    case ECharacterCreatorFaceAdvancedParameter::LipFullness: return LipFullness;
+    case ECharacterCreatorFaceAdvancedParameter::EarSize: return EarSize;
+    case ECharacterCreatorFaceAdvancedParameter::NasolabialDepth: return NasolabialDepth;
+    default: return 0.5f;
+    }
+}
+
+void FCharacterCreatorFaceAdvancedState::SetValue(ECharacterCreatorFaceAdvancedParameter Parameter, float Value)
+{
+    const float ClampedValue = FMath::Clamp(Value, 0.0f, 1.0f);
+    switch (Parameter)
+    {
+    case ECharacterCreatorFaceAdvancedParameter::CheekWidth: CheekWidth = ClampedValue; break;
+    case ECharacterCreatorFaceAdvancedParameter::ChinDepth: ChinDepth = ClampedValue; break;
+    case ECharacterCreatorFaceAdvancedParameter::EyeSpacing: EyeSpacing = ClampedValue; break;
+    case ECharacterCreatorFaceAdvancedParameter::EyeHeight: EyeHeight = ClampedValue; break;
+    case ECharacterCreatorFaceAdvancedParameter::LipFullness: LipFullness = ClampedValue; break;
+    case ECharacterCreatorFaceAdvancedParameter::EarSize: EarSize = ClampedValue; break;
+    case ECharacterCreatorFaceAdvancedParameter::NasolabialDepth: NasolabialDepth = ClampedValue; break;
+    default: break;
+    }
+}
+
+float FCharacterCreatorGroomingState::GetValue(ECharacterCreatorGroomingParameter Parameter) const
+{
+    switch (Parameter)
+    {
+    case ECharacterCreatorGroomingParameter::SkinRoughness: return SkinRoughness;
+    case ECharacterCreatorGroomingParameter::SkinDetail: return SkinDetail;
+    case ECharacterCreatorGroomingParameter::HairLength: return HairLength;
+    case ECharacterCreatorGroomingParameter::HairDensity: return HairDensity;
+    case ECharacterCreatorGroomingParameter::HairRoughness: return HairRoughness;
+    default: return 0.5f;
+    }
+}
+
+void FCharacterCreatorGroomingState::SetValue(ECharacterCreatorGroomingParameter Parameter, float Value)
+{
+    const float ClampedValue = FMath::Clamp(Value, 0.0f, 1.0f);
+    switch (Parameter)
+    {
+    case ECharacterCreatorGroomingParameter::SkinRoughness: SkinRoughness = ClampedValue; break;
+    case ECharacterCreatorGroomingParameter::SkinDetail: SkinDetail = ClampedValue; break;
+    case ECharacterCreatorGroomingParameter::HairLength: HairLength = ClampedValue; break;
+    case ECharacterCreatorGroomingParameter::HairDensity: HairDensity = ClampedValue; break;
+    case ECharacterCreatorGroomingParameter::HairRoughness: HairRoughness = ClampedValue; break;
+    default: break;
+    }
+}
+
+FSoftObjectPath FCharacterCreatorClothingState::GetSlotAsset(ECharacterCreatorClothingSlot Slot) const
+{
+    if (const FSoftObjectPath* AssetPath = SlotAssets.Find(Slot))
+    {
+        return *AssetPath;
+    }
+    return FSoftObjectPath();
+}
+
+void FCharacterCreatorClothingState::SetSlotAsset(ECharacterCreatorClothingSlot Slot, const FSoftObjectPath& AssetPath)
+{
+    if (AssetPath.IsNull())
+    {
+        SlotAssets.Remove(Slot);
+    }
+    else
+    {
+        SlotAssets.Add(Slot, AssetPath);
+    }
+}
+
 bool FCharacterAssetReferences::IsEmpty() const
 {
     return SkeletalMesh.IsNull()
@@ -133,6 +212,113 @@ void UCharacterCreatorSession::SetParameterValue(ECharacterCreatorParameter Para
     AppearanceState.SetParameterValue(Parameter, ClampedValue);
     AppearanceState.bHasUnsavedChanges = true;
     OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetAdvancedFaceValue(ECharacterCreatorFaceAdvancedParameter Parameter, float Value)
+{
+    const float ClampedValue = FMath::Clamp(Value, 0.0f, 1.0f);
+    if (FMath::IsNearlyEqual(AppearanceState.AdvancedFace.GetValue(Parameter), ClampedValue))
+    {
+        return;
+    }
+
+    AppearanceState.AdvancedFace.SetValue(Parameter, ClampedValue);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+float UCharacterCreatorSession::GetAdvancedFaceValue(ECharacterCreatorFaceAdvancedParameter Parameter) const
+{
+    return AppearanceState.AdvancedFace.GetValue(Parameter);
+}
+
+void UCharacterCreatorSession::SetGroomingValue(ECharacterCreatorGroomingParameter Parameter, float Value)
+{
+    const float ClampedValue = FMath::Clamp(Value, 0.0f, 1.0f);
+    if (FMath::IsNearlyEqual(AppearanceState.Grooming.GetValue(Parameter), ClampedValue))
+    {
+        return;
+    }
+
+    AppearanceState.Grooming.SetValue(Parameter, ClampedValue);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+float UCharacterCreatorSession::GetGroomingValue(ECharacterCreatorGroomingParameter Parameter) const
+{
+    return AppearanceState.Grooming.GetValue(Parameter);
+}
+
+void UCharacterCreatorSession::SetHairStyle(FName StyleId)
+{
+    if (StyleId.IsNone() || AppearanceState.Grooming.HairStyle == StyleId)
+    {
+        return;
+    }
+
+    AppearanceState.Grooming.HairStyle = StyleId;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetSkinProfile(FName ProfileId)
+{
+    if (ProfileId.IsNone() || AppearanceState.Grooming.SkinProfile == ProfileId)
+    {
+        return;
+    }
+
+    AppearanceState.Grooming.SkinProfile = ProfileId;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetClothingAsset(ECharacterCreatorClothingSlot Slot, const FSoftObjectPath& AssetPath)
+{
+    if (AppearanceState.Clothing.GetSlotAsset(Slot) == AssetPath)
+    {
+        return;
+    }
+
+    AppearanceState.Clothing.SetSlotAsset(Slot, AssetPath);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FSoftObjectPath UCharacterCreatorSession::GetClothingAsset(ECharacterCreatorClothingSlot Slot) const
+{
+    return AppearanceState.Clothing.GetSlotAsset(Slot);
+}
+
+void UCharacterCreatorSession::SetAccessoryAsset(FName AccessoryId, const FSoftObjectPath& AssetPath)
+{
+    if (AccessoryId.IsNone())
+    {
+        return;
+    }
+
+    const FSoftObjectPath CurrentPath = AppearanceState.Clothing.Accessories.FindRef(AccessoryId);
+    if (CurrentPath == AssetPath)
+    {
+        return;
+    }
+
+    if (AssetPath.IsNull())
+    {
+        AppearanceState.Clothing.Accessories.Remove(AccessoryId);
+    }
+    else
+    {
+        AppearanceState.Clothing.Accessories.Add(AccessoryId, AssetPath);
+    }
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FSoftObjectPath UCharacterCreatorSession::GetAccessoryAsset(FName AccessoryId) const
+{
+    return AppearanceState.Clothing.Accessories.FindRef(AccessoryId);
 }
 
 float UCharacterCreatorSession::GetParameterValue(ECharacterCreatorParameter Parameter) const

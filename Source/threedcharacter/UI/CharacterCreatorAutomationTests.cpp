@@ -36,6 +36,14 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
     Session->RevertAppearanceChanges();
     TestEqual(TEXT("Revert restores the applied value"), Session->GetParameterValue(ECharacterCreatorParameter::Height), 0.9f);
 
+    Session->SetAdvancedFaceValue(ECharacterCreatorFaceAdvancedParameter::CheekWidth, 1.5f);
+    TestEqual(TEXT("Advanced face values are constrained"), Session->GetAdvancedFaceValue(ECharacterCreatorFaceAdvancedParameter::CheekWidth), 1.0f);
+    Session->SetGroomingValue(ECharacterCreatorGroomingParameter::HairLength, -1.0f);
+    TestEqual(TEXT("Grooming values are constrained"), Session->GetGroomingValue(ECharacterCreatorGroomingParameter::HairLength), 0.0f);
+    Session->SetHairStyle(FName(TEXT("ShortClean")));
+    Session->SetClothingAsset(ECharacterCreatorClothingSlot::Legs, FSoftObjectPath(TEXT("/Game/Test/Legs.Legs")));
+    TestEqual(TEXT("Clothing slot stores its selected asset"), Session->GetClothingAsset(ECharacterCreatorClothingSlot::Legs), FSoftObjectPath(TEXT("/Game/Test/Legs.Legs")));
+
     const FCharacterPreset Duplicate = Session->CreatePresetFromCurrent(FText::FromString(TEXT("Test Preset")), FText::FromString(TEXT("Automation preset")));
     TestTrue(TEXT("Preset has a valid id"), Duplicate.PresetId.IsValid());
     TestTrue(TEXT("Preset duplicate succeeds"), Session->DuplicatePreset(Duplicate.PresetId));

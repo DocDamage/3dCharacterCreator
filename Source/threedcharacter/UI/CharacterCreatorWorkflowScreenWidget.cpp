@@ -242,6 +242,7 @@ void UCharacterCreatorWorkflowScreenWidget::BuildOutfitInspector(UCanvasPanel* C
     AddCommandButton(Canvas, TEXT("KNIGHT TORSO"), FName(TEXT("outfit_knight")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddCommandButton(Canvas, TEXT("SCI-FI TORSO"), FName(TEXT("outfit_scifi")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddCommandButton(Canvas, TEXT("REMOVE OUTFIT"), FName(TEXT("outfit_none")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Ghost);
+    AddCommandButton(Canvas, TEXT("EQUIP LEGS + FEET"), FName(TEXT("clothing_lower_body")), FVector2D(1012.0f, 338.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddLabel(WidgetTree, Canvas, TEXT("SelectionLabel"), TEXT("CURRENT SELECTION"), FVector2D(1012.0f, 360.0f), FVector2D(220.0f, 16.0f), 9, Palette.Muted);
     SelectionSummaryText = Label(WidgetTree, TEXT("None"), 11, Palette.Text);
     Place(Canvas, SelectionSummaryText, FVector2D(1012.0f, 382.0f), FVector2D(352.0f, 54.0f));
@@ -255,6 +256,7 @@ void UCharacterCreatorWorkflowScreenWidget::BuildHairInspector(UCanvasPanel* Can
     AddCommandButton(Canvas, TEXT("BASE HAIR 01"), FName(TEXT("hair_base_01")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddCommandButton(Canvas, TEXT("BASE HAIR 02"), FName(TEXT("hair_base_02")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddCommandButton(Canvas, TEXT("REMOVE HAIR"), FName(TEXT("hair_none")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Ghost);
+    AddCommandButton(Canvas, TEXT("SHORT GROOMING PROFILE"), FName(TEXT("grooming_short")), FVector2D(1012.0f, 338.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddLabel(WidgetTree, Canvas, TEXT("SelectionLabel"), TEXT("CURRENT SELECTION"), FVector2D(1012.0f, 360.0f), FVector2D(220.0f, 16.0f), 9, Palette.Muted);
     SelectionSummaryText = Label(WidgetTree, TEXT("None"), 11, Palette.Text);
     Place(Canvas, SelectionSummaryText, FVector2D(1012.0f, 382.0f), FVector2D(352.0f, 54.0f));
@@ -487,6 +489,14 @@ void UCharacterCreatorWorkflowScreenWidget::HandleCommand(FName CommandId)
         Session->SetLoadoutAsset(ECharacterCreatorLoadoutSlot::Outfit, FSoftObjectPath());
         return;
     }
+    if (IsCommand(CommandId, TEXT("clothing_lower_body")))
+    {
+        const FSoftObjectPath LowerBody(TEXT("/Game/Synty/SidekickCharacters/Resources/Meshes/Outfits/Starter/SK_FANT_KNGT_17_10LEGS_HU01.SK_FANT_KNGT_17_10LEGS_HU01"));
+        Session->SetClothingAsset(ECharacterCreatorClothingSlot::Legs, LowerBody);
+        Session->SetClothingAsset(ECharacterCreatorClothingSlot::Feet, LowerBody);
+        Session->SetStatusMessage(FText::FromString(TEXT("Lower-body clothing slots configured")));
+        return;
+    }
     if (IsCommand(CommandId, TEXT("hair_base_01")))
     {
         Session->SetLoadoutAsset(ECharacterCreatorLoadoutSlot::Hair, FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Meshes/Species/Humans/SK_HUMN_BASE_01_02HAIR_HU01.SK_HUMN_BASE_01_02HAIR_HU01")));
@@ -500,6 +510,15 @@ void UCharacterCreatorWorkflowScreenWidget::HandleCommand(FName CommandId)
     if (IsCommand(CommandId, TEXT("hair_none")))
     {
         Session->SetLoadoutAsset(ECharacterCreatorLoadoutSlot::Hair, FSoftObjectPath());
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("grooming_short")))
+    {
+        Session->SetHairStyle(FName(TEXT("ShortClean")));
+        Session->SetGroomingValue(ECharacterCreatorGroomingParameter::HairLength, 0.20f);
+        Session->SetGroomingValue(ECharacterCreatorGroomingParameter::HairDensity, 0.78f);
+        Session->SetSkinProfile(FName(TEXT("Natural")));
+        Session->SetStatusMessage(FText::FromString(TEXT("Short grooming profile applied")));
         return;
     }
     if (IsCommand(CommandId, TEXT("weapon_none")))

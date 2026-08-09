@@ -11,7 +11,7 @@ class THREEDCHARACTER_API UCharacterCreatorSaveGame : public USaveGame
     GENERATED_BODY()
 
 public:
-    static constexpr int32 CurrentSaveVersion = 1;
+    static constexpr int32 CurrentSaveVersion = 2;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Save")
     int32 SaveVersion = CurrentSaveVersion;

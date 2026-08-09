@@ -367,6 +367,39 @@ void ACharacterCreatorPreviewActor::ApplyAppearance(const FCharacterAppearanceSt
         }
     }
 
+    const TPair<ECharacterCreatorFaceAdvancedParameter, float> AdvancedMorphValues[] = {
+        {ECharacterCreatorFaceAdvancedParameter::CheekWidth, Appearance.AdvancedFace.CheekWidth},
+        {ECharacterCreatorFaceAdvancedParameter::ChinDepth, Appearance.AdvancedFace.ChinDepth},
+        {ECharacterCreatorFaceAdvancedParameter::EyeSpacing, Appearance.AdvancedFace.EyeSpacing},
+        {ECharacterCreatorFaceAdvancedParameter::EyeHeight, Appearance.AdvancedFace.EyeHeight},
+        {ECharacterCreatorFaceAdvancedParameter::LipFullness, Appearance.AdvancedFace.LipFullness},
+        {ECharacterCreatorFaceAdvancedParameter::EarSize, Appearance.AdvancedFace.EarSize},
+        {ECharacterCreatorFaceAdvancedParameter::NasolabialDepth, Appearance.AdvancedFace.NasolabialDepth}
+    };
+
+    for (const TPair<ECharacterCreatorFaceAdvancedParameter, float>& MorphValue : AdvancedMorphValues)
+    {
+        ECharacterCreatorParameter CandidateParameter = ECharacterCreatorParameter::JawWidth;
+        switch (MorphValue.Key)
+        {
+        case ECharacterCreatorFaceAdvancedParameter::CheekWidth: CandidateParameter = ECharacterCreatorParameter::ShoulderWidth; break;
+        case ECharacterCreatorFaceAdvancedParameter::ChinDepth: CandidateParameter = ECharacterCreatorParameter::JawWidth; break;
+        case ECharacterCreatorFaceAdvancedParameter::EyeSpacing:
+        case ECharacterCreatorFaceAdvancedParameter::EyeHeight: CandidateParameter = ECharacterCreatorParameter::EyeSize; break;
+        case ECharacterCreatorFaceAdvancedParameter::LipFullness: CandidateParameter = ECharacterCreatorParameter::MouthWidth; break;
+        case ECharacterCreatorFaceAdvancedParameter::EarSize: CandidateParameter = ECharacterCreatorParameter::HeadScale; break;
+        case ECharacterCreatorFaceAdvancedParameter::NasolabialDepth: CandidateParameter = ECharacterCreatorParameter::NoseWidth; break;
+        default: break;
+        }
+
+        const FName MorphTargetName = GetMorphTargetName(Appearance, CandidateParameter);
+        if (!MorphTargetName.IsNone())
+        {
+            const float CenteredMorphWeight = FMath::Clamp((MorphValue.Value - 0.5f) * 2.0f, -1.0f, 1.0f);
+            CharacterMesh->SetMorphTarget(MorphTargetName, CenteredMorphWeight);
+        }
+    }
+
     ApplyMaterialParameters(Appearance);
 }
 
@@ -423,10 +456,12 @@ void ACharacterCreatorPreviewActor::ApplyMaterialParameters(const FCharacterAppe
         {
             DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Appearance.SkinColor);
             DynamicMaterial->SetVectorParameterValue(TEXT("Base Color"), Appearance.SkinColor);
+            DynamicMaterial->SetScalarParameterValue(TEXT("SkinRoughness"), Appearance.Grooming.SkinRoughness);
+            DynamicMaterial->SetScalarParameterValue(TEXT("SkinDetail"), Appearance.Grooming.SkinDetail);
         }
     }
 
-    const auto ApplyColorToComponent = [](UMeshComponent* Component, const FLinearColor& Color)
+    const auto ApplyColorToComponent = [&Appearance](UMeshComponent* Component, const FLinearColor& Color)
     {
         if (!Component)
         {
@@ -440,6 +475,9 @@ void ACharacterCreatorPreviewActor::ApplyMaterialParameters(const FCharacterAppe
             {
                 DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), Color);
                 DynamicMaterial->SetVectorParameterValue(TEXT("Base Color"), Color);
+                DynamicMaterial->SetScalarParameterValue(TEXT("HairLength"), Appearance.Grooming.HairLength);
+                DynamicMaterial->SetScalarParameterValue(TEXT("HairDensity"), Appearance.Grooming.HairDensity);
+                DynamicMaterial->SetScalarParameterValue(TEXT("HairRoughness"), Appearance.Grooming.HairRoughness);
             }
         }
     };
