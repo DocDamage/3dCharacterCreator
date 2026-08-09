@@ -410,7 +410,11 @@ void ACharacterCreatorPreviewActor::ApplyLoadedAssets(const FCharacterAppearance
         CharacterMesh->SetAnimInstanceClass(AnimationClass);
     }
 
-    if (UAnimSequenceBase* PreviewAnimation = Appearance.Assets.PreviewAnimation.Get())
+    if (UAnimSequenceBase* TargetAnimation = Cast<UAnimSequenceBase>(Appearance.Animation.TargetAnimation.ResolveObject()))
+    {
+        CharacterMesh->PlayAnimation(TargetAnimation, true);
+    }
+    else if (UAnimSequenceBase* PreviewAnimation = Appearance.Assets.PreviewAnimation.Get())
     {
         CharacterMesh->PlayAnimation(PreviewAnimation, true);
     }

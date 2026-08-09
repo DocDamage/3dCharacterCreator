@@ -326,6 +326,108 @@ struct THREEDCHARACTER_API FCharacterCreatorAnimationState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
     ECharacterCreatorAnimationState State = ECharacterCreatorAnimationState::Unassigned;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    int32 MappedBoneCount = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    TArray<FName> RetargetWarnings;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FText LastRetargetMessage;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorBlendSpaceState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FSoftObjectPath AssetPath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    float SpeedMin = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    float SpeedMax = 600.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    float DirectionMin = -180.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    float DirectionMax = 180.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    bool bConfigured = false;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorAnimationBlueprintState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FSoftObjectPath SourceBlueprint;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FSoftObjectPath GeneratedBlueprint;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    TArray<FName> EnabledLayers;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    bool bLocomotionEnabled = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    bool bGenerated = false;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorMontageComboState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FSoftObjectPath MontagePath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    TArray<FName> Sections;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    float ComboWindowSeconds = 0.35f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    bool bAuthoringReady = false;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorAnimationSetState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FName SetId = NAME_None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    TMap<FName, FSoftObjectPath> Clips;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    bool bGenerated = false;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorWeaponAnimationProfile
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FName WeaponId = NAME_None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    TMap<FName, FSoftObjectPath> Clips;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    bool bValidated = false;
 };
 
 USTRUCT(BlueprintType)
@@ -445,6 +547,21 @@ struct THREEDCHARACTER_API FCharacterAppearanceState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|State")
     FCharacterCreatorAnimationState Animation;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FCharacterCreatorBlendSpaceState BlendSpace;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FCharacterCreatorAnimationBlueprintState AnimationBlueprint;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FCharacterCreatorMontageComboState MontageCombo;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    FCharacterCreatorAnimationSetState AnimationSet;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
+    TMap<FName, FCharacterCreatorWeaponAnimationProfile> WeaponAnimationProfiles;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Body")
     float Height = 0.56f;
@@ -691,6 +808,33 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Animation")
     void SetAnimationState(ECharacterCreatorAnimationState NewState);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Animation")
+    void SetBlendSpaceState(const FCharacterCreatorBlendSpaceState& NewState);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Animation")
+    FCharacterCreatorBlendSpaceState GetBlendSpaceState() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Animation")
+    void SetAnimationBlueprintState(const FCharacterCreatorAnimationBlueprintState& NewState);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Animation")
+    FCharacterCreatorAnimationBlueprintState GetAnimationBlueprintState() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Animation")
+    void SetMontageComboState(const FCharacterCreatorMontageComboState& NewState);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Animation")
+    FCharacterCreatorMontageComboState GetMontageComboState() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Animation")
+    void SetAnimationSetClip(FName ClipId, const FSoftObjectPath& AssetPath);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Animation")
+    void SetWeaponAnimationProfile(const FCharacterCreatorWeaponAnimationProfile& Profile);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Animation")
+    bool ExecuteAnimationRetarget();
 
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Onboarding")
     void AdvanceOnboarding();

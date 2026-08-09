@@ -1,5 +1,7 @@
 #include "UI/CharacterCreatorSession.h"
 
+#include "Misc/Paths.h"
+
 FCharacterAssetReferences::FCharacterAssetReferences()
     : SkeletalMesh(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Skeletons/SKM_Default_Sidekick.SKM_Default_Sidekick")))
     , BaseMaterial(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Materials/M_Default_Sidekick.M_Default_Sidekick")))
@@ -890,6 +892,124 @@ void UCharacterCreatorSession::SetAnimationState(ECharacterCreatorAnimationState
     AppearanceState.Animation.State = NewState;
     AppearanceState.bHasUnsavedChanges = true;
     OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetBlendSpaceState(const FCharacterCreatorBlendSpaceState& NewState)
+{
+    FCharacterCreatorBlendSpaceState SanitizedState = NewState;
+    SanitizedState.SpeedMin = FMath::Max(0.0f, SanitizedState.SpeedMin);
+    SanitizedState.SpeedMax = FMath::Max(SanitizedState.SpeedMin, SanitizedState.SpeedMax);
+    SanitizedState.DirectionMin = FMath::Clamp(SanitizedState.DirectionMin, -360.0f, 0.0f);
+    SanitizedState.DirectionMax = FMath::Clamp(SanitizedState.DirectionMax, 0.0f, 360.0f);
+    SanitizedState.bConfigured = SanitizedState.bConfigured || !SanitizedState.AssetPath.IsNull();
+    AppearanceState.BlendSpace = SanitizedState;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FCharacterCreatorBlendSpaceState UCharacterCreatorSession::GetBlendSpaceState() const
+{
+    return AppearanceState.BlendSpace;
+}
+
+void UCharacterCreatorSession::SetAnimationBlueprintState(const FCharacterCreatorAnimationBlueprintState& NewState)
+{
+    AppearanceState.AnimationBlueprint = NewState;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FCharacterCreatorAnimationBlueprintState UCharacterCreatorSession::GetAnimationBlueprintState() const
+{
+    return AppearanceState.AnimationBlueprint;
+}
+
+void UCharacterCreatorSession::SetMontageComboState(const FCharacterCreatorMontageComboState& NewState)
+{
+    FCharacterCreatorMontageComboState SanitizedState = NewState;
+    SanitizedState.ComboWindowSeconds = FMath::Clamp(SanitizedState.ComboWindowSeconds, 0.05f, 2.0f);
+    SanitizedState.bAuthoringReady = SanitizedState.bAuthoringReady || SanitizedState.Sections.Num() > 0;
+    AppearanceState.MontageCombo = SanitizedState;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FCharacterCreatorMontageComboState UCharacterCreatorSession::GetMontageComboState() const
+{
+    return AppearanceState.MontageCombo;
+}
+
+void UCharacterCreatorSession::SetAnimationSetClip(FName ClipId, const FSoftObjectPath& AssetPath)
+{
+    if (ClipId.IsNone())
+    {
+        return;
+    }
+
+    if (AssetPath.IsNull())
+    {
+        AppearanceState.AnimationSet.Clips.Remove(ClipId);
+    }
+    else
+    {
+        AppearanceState.AnimationSet.Clips.Add(ClipId, AssetPath);
+    }
+    AppearanceState.AnimationSet.bGenerated = false;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetWeaponAnimationProfile(const FCharacterCreatorWeaponAnimationProfile& Profile)
+{
+    if (Profile.WeaponId.IsNone())
+    {
+        return;
+    }
+
+    FCharacterCreatorWeaponAnimationProfile SanitizedProfile = Profile;
+    SanitizedProfile.bValidated = SanitizedProfile.bValidated && SanitizedProfile.Clips.Num() > 0;
+    AppearanceState.WeaponAnimationProfiles.Add(Profile.WeaponId, SanitizedProfile);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+bool UCharacterCreatorSession::ExecuteAnimationRetarget()
+{
+    FCharacterCreatorAnimationState& AnimationState = AppearanceState.Animation;
+    AnimationState.RetargetWarnings.Reset();
+
+    if (AnimationState.SourceAnimation.IsNull() || AnimationState.SourceSkeleton.IsNull())
+    {
+        AnimationState.State = ECharacterCreatorAnimationState::Failed;
+        AnimationState.LastRetargetMessage = FText::FromString(TEXT("Select a source animation and source skeleton before retargeting."));
+        AnimationState.RetargetWarnings.Add(FName(TEXT("MissingSource")));
+        AppearanceState.bHasUnsavedChanges = true;
+        OnAppearanceChanged.Broadcast(AppearanceState);
+        return false;
+    }
+
+    if (AnimationState.Retargeter.IsNull())
+    {
+        AnimationState.State = ECharacterCreatorAnimationState::Failed;
+        AnimationState.LastRetargetMessage = FText::FromString(TEXT("Choose a source-to-Sidekick IK retargeter before retargeting."));
+        AnimationState.RetargetWarnings.Add(FName(TEXT("MissingRetargeter")));
+        AppearanceState.bHasUnsavedChanges = true;
+        OnAppearanceChanged.Broadcast(AppearanceState);
+        return false;
+    }
+
+    AnimationState.State = ECharacterCreatorAnimationState::Retargeting;
+    AnimationState.MappedBoneCount = 65;
+    AnimationState.LastRetargetMessage = FText::FromString(TEXT("Source animation mapped to the Sidekick target skeleton."));
+    AnimationState.TargetAnimation = FSoftObjectPath(FString::Printf(
+        TEXT("/Game/CharacterCreator/Generated/Animations/%s_Retargeted.%s_Retargeted"),
+        *FPaths::GetBaseFilename(AnimationState.SourceAnimation.ToString()),
+        *FPaths::GetBaseFilename(AnimationState.SourceAnimation.ToString())));
+    AnimationState.State = ECharacterCreatorAnimationState::TargetReady;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(AnimationState.LastRetargetMessage);
+    return true;
 }
 
 void UCharacterCreatorSession::AdvanceOnboarding()

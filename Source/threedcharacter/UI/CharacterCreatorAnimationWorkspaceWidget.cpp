@@ -212,15 +212,17 @@ void UCharacterCreatorAnimationWorkspaceWidget::BuildInspector(UCanvasPanel* Can
         break;
     case ECharacterCreatorScreen::AnimationBlueprintWorkspace:
         AddCommandButton(Canvas, TEXT("SELECT MANNY ABP SOURCE"), FName(TEXT("abp_manny")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
-        AddCommandButton(Canvas, TEXT("CLEAR ANIMATION BLUEPRINT"), FName(TEXT("abp_clear")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Ghost);
+        AddCommandButton(Canvas, TEXT("GENERATE SIDEKICK ABP PROFILE"), FName(TEXT("abp_generate")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
+        AddCommandButton(Canvas, TEXT("CLEAR ANIMATION BLUEPRINT"), FName(TEXT("abp_clear")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Ghost);
         break;
     case ECharacterCreatorScreen::MontageComboBuilder:
         AddCommandButton(Canvas, TEXT("USE COMBO HANDS SOURCE"), FName(TEXT("source_combo")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
         AddCommandButton(Canvas, TEXT("MARK MONTAGE READY"), FName(TEXT("montage_ready")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
+        AddCommandButton(Canvas, TEXT("BUILD ANIMATION SET"), FName(TEXT("animation_set_build")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
         break;
     case ECharacterCreatorScreen::RetargetingAssistant:
         AddCommandButton(Canvas, TEXT("LOAD MANNEQUIN RETARGET RIG"), FName(TEXT("retarget_rig")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
-        AddCommandButton(Canvas, TEXT("BEGIN RETARGETING"), FName(TEXT("retarget_begin")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
+        AddCommandButton(Canvas, TEXT("EXECUTE RETARGETING"), FName(TEXT("retarget_begin")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
         AddCommandButton(Canvas, TEXT("CLEAR RETARGETER"), FName(TEXT("retarget_clear")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Ghost);
         break;
     case ECharacterCreatorScreen::SkeletonRigSocketInspector:
@@ -373,23 +375,59 @@ void UCharacterCreatorAnimationWorkspaceWidget::HandleCommand(FName CommandId)
     if (IsCommand(CommandId, TEXT("source_clear"))) { Session->SetAnimationSource(FSoftObjectPath(), MannySkeleton); return; }
     if (IsCommand(CommandId, TEXT("blend_space_asset")))
     {
-        Session->SetAnimationSource(FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/Manny/BS_MM_WalkRun.BS_MM_WalkRun")), MannySkeleton);
+        const FSoftObjectPath BlendSpacePath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/Manny/BS_MM_WalkRun.BS_MM_WalkRun"));
+        Session->SetAnimationSource(BlendSpacePath, MannySkeleton);
+        FCharacterCreatorBlendSpaceState BlendSpace;
+        BlendSpace.AssetPath = BlendSpacePath;
+        BlendSpace.bConfigured = true;
+        Session->SetBlendSpaceState(BlendSpace);
         Session->SetStatusMessage(FText::FromString(TEXT("Manny blend space selected; retarget it before Sidekick playback")));
         return;
     }
     if (IsCommand(CommandId, TEXT("abp_manny")))
     {
+        FCharacterCreatorAnimationBlueprintState BlueprintState;
+        BlueprintState.SourceBlueprint = FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/ABP_Manny.ABP_Manny"));
+        BlueprintState.EnabledLayers = { FName(TEXT("Locomotion")), FName(TEXT("Additive")), FName(TEXT("WeaponOverlay")) };
+        Session->SetAnimationBlueprintState(BlueprintState);
         Session->SetStatusMessage(FText::FromString(TEXT("Manny animation blueprint selected as a source workspace asset")));
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("abp_generate")))
+    {
+        FCharacterCreatorAnimationBlueprintState BlueprintState = Session->GetAnimationBlueprintState();
+        if (BlueprintState.SourceBlueprint.IsNull())
+        {
+            BlueprintState.SourceBlueprint = FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/ABP_Manny.ABP_Manny"));
+        }
+        BlueprintState.GeneratedBlueprint = FSoftObjectPath(TEXT("/Game/CharacterCreator/Generated/Animation/ABP_SidekickGenerated.ABP_SidekickGenerated"));
+        BlueprintState.bGenerated = true;
+        Session->SetAnimationBlueprintState(BlueprintState);
+        Session->SetStatusMessage(FText::FromString(TEXT("Sidekick animation blueprint profile generated")));
         return;
     }
     if (IsCommand(CommandId, TEXT("abp_clear")))
     {
+        Session->SetAnimationBlueprintState(FCharacterCreatorAnimationBlueprintState());
         Session->SetStatusMessage(FText::FromString(TEXT("Animation blueprint source cleared")));
         return;
     }
     if (IsCommand(CommandId, TEXT("montage_ready")))
     {
+        FCharacterCreatorMontageComboState MontageState;
+        MontageState.MontagePath = FSoftObjectPath(TEXT("/Game/CharacterCreator/Generated/Animation/Montage_Combo.Montage_Combo"));
+        MontageState.Sections = { FName(TEXT("Attack01")), FName(TEXT("Attack02")), FName(TEXT("Recover")) };
+        MontageState.bAuthoringReady = true;
+        Session->SetMontageComboState(MontageState);
         Session->SetStatusMessage(FText::FromString(TEXT("Combo source is ready for montage authoring")));
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("animation_set_build")))
+    {
+        Session->SetAnimationSetClip(FName(TEXT("Idle")), FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/Manny/MM_Idle.MM_Idle")));
+        Session->SetAnimationSetClip(FName(TEXT("Walk")), FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/Manny/MM_Walk_Fwd.MM_Walk_Fwd")));
+        Session->SetAnimationSetClip(FName(TEXT("Run")), FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/Manny/MM_Run_Fwd.MM_Run_Fwd")));
+        Session->SetStatusMessage(FText::FromString(TEXT("Locomotion animation set built from Manny source clips")));
         return;
     }
     if (IsCommand(CommandId, TEXT("retarget_rig")))
@@ -399,8 +437,7 @@ void UCharacterCreatorAnimationWorkspaceWidget::HandleCommand(FName CommandId)
     }
     if (IsCommand(CommandId, TEXT("retarget_begin")))
     {
-        Session->SetAnimationState(ECharacterCreatorAnimationState::Retargeting);
-        Session->SetStatusMessage(FText::FromString(TEXT("Retargeting assistant is ready for source-to-Sidekick mapping")));
+        Session->ExecuteAnimationRetarget();
         return;
     }
     if (IsCommand(CommandId, TEXT("retarget_clear")))

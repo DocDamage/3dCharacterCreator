@@ -63,6 +63,32 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Weapon grip scale is sanitized"), StoredWeapon.GripScale.X > 0.0f && StoredWeapon.GripScale.Y > 0.0f && StoredWeapon.GripScale.Z > 0.0f);
     TestTrue(TEXT("Weapon library contains default entries"), Session->GetWeaponLibrary().Num() >= 2);
 
+    FCharacterCreatorBlendSpaceState BlendSpace;
+    BlendSpace.AssetPath = FSoftObjectPath(TEXT("/Game/Test/WalkRun.WalkRun"));
+    BlendSpace.SpeedMax = -20.0f;
+    Session->SetBlendSpaceState(BlendSpace);
+    TestTrue(TEXT("Blend space state is configured"), Session->GetBlendSpaceState().bConfigured);
+    TestTrue(TEXT("Blend space max speed is constrained"), Session->GetBlendSpaceState().SpeedMax >= Session->GetBlendSpaceState().SpeedMin);
+
+    FCharacterCreatorAnimationBlueprintState BlueprintState;
+    BlueprintState.SourceBlueprint = FSoftObjectPath(TEXT("/Game/Test/ABP_Source.ABP_Source"));
+    BlueprintState.EnabledLayers = { FName(TEXT("Locomotion")), FName(TEXT("WeaponOverlay")) };
+    Session->SetAnimationBlueprintState(BlueprintState);
+    TestEqual(TEXT("Animation blueprint layers persist"), Session->GetAnimationBlueprintState().EnabledLayers.Num(), 2);
+
+    FCharacterCreatorMontageComboState MontageState;
+    MontageState.Sections = { FName(TEXT("Attack")), FName(TEXT("Recover")) };
+    MontageState.ComboWindowSeconds = 8.0f;
+    Session->SetMontageComboState(MontageState);
+    TestTrue(TEXT("Montage combo state is authoring ready"), Session->GetMontageComboState().bAuthoringReady);
+    TestTrue(TEXT("Montage combo window is constrained"), Session->GetMontageComboState().ComboWindowSeconds <= 2.0f);
+
+    Session->SetAnimationSource(FSoftObjectPath(TEXT("/Game/Test/Idle.Idle")), FSoftObjectPath(TEXT("/Game/Test/SourceSkeleton.SourceSkeleton")));
+    Session->SetAnimationRetargeter(FSoftObjectPath(TEXT("/Game/Test/Retargeter.Retargeter")));
+    TestTrue(TEXT("Animation retarget execution succeeds with required inputs"), Session->ExecuteAnimationRetarget());
+    TestEqual(TEXT("Retarget execution reaches target ready"), Session->GetAppearanceState().Animation.State, ECharacterCreatorAnimationState::TargetReady);
+    TestTrue(TEXT("Retarget execution records mapped bones"), Session->GetAppearanceState().Animation.MappedBoneCount > 0);
+
     const FCharacterPreset Duplicate = Session->CreatePresetFromCurrent(FText::FromString(TEXT("Test Preset")), FText::FromString(TEXT("Automation preset")));
     TestTrue(TEXT("Preset has a valid id"), Duplicate.PresetId.IsValid());
     TestTrue(TEXT("Preset duplicate succeeds"), Session->DuplicatePreset(Duplicate.PresetId));
