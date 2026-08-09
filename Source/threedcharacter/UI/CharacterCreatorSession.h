@@ -532,6 +532,114 @@ struct THREEDCHARACTER_API FCharacterCreatorTechnicalToolsState
     bool bValidated = false;
 };
 
+UENUM(BlueprintType)
+enum class ECharacterCreatorGameplayTestState : uint8
+{
+    Idle,
+    Running,
+    Passed,
+    Failed
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorGameplayTestStateData
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Testing")
+    ECharacterCreatorGameplayTestState State = ECharacterCreatorGameplayTestState::Idle;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Testing")
+    TArray<FName> Actions;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Testing")
+    FText LastResult;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Testing")
+    float LastDurationSeconds = 0.0f;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorPreviewStudioState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FName CameraMode = TEXT("Front");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FName Environment = TEXT("Studio");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FName LightingProfile = TEXT("ThreePoint");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    float Zoom = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    float OrbitYaw = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    float OrbitPitch = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    bool bOrbitEnabled = false;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorPortraitCaptureState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FString OutputPath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    int32 Width = 1024;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    int32 Height = 1024;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FName Format = TEXT("PNG");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    bool bCaptureReady = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FDateTime LastCaptureUtc;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorControllerHintState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Input")
+    TMap<FName, FText> Hints;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Input")
+    bool bGamepadEnabled = true;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorPreviewTestingState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FCharacterCreatorGameplayTestStateData Gameplay;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FCharacterCreatorPreviewStudioState Studio;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FCharacterCreatorPortraitCaptureState Portrait;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FCharacterCreatorControllerHintState Controller;
+};
+
 USTRUCT(BlueprintType)
 struct THREEDCHARACTER_API FCharacterCreatorFaceAdvancedState
 {
@@ -667,6 +775,9 @@ struct THREEDCHARACTER_API FCharacterAppearanceState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
     FCharacterCreatorTechnicalToolsState Technical;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
+    FCharacterCreatorPreviewTestingState PreviewTesting;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Body")
     float Height = 0.56f;
@@ -959,6 +1070,36 @@ public:
     UFUNCTION(BlueprintPure, Category = "Character Creator|Technical")
     FCharacterCreatorLODPerformanceState GetLODPerformance() const;
 
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Testing")
+    void StartGameplayTest();
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Testing")
+    void RecordGameplayAction(FName ActionId);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Testing")
+    void StopGameplayTest(bool bPassed);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Testing")
+    FCharacterCreatorGameplayTestStateData GetGameplayTestState() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Preview")
+    void SetPreviewStudioState(const FCharacterCreatorPreviewStudioState& NewState);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Preview")
+    FCharacterCreatorPreviewStudioState GetPreviewStudioState() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Preview")
+    bool PreparePortraitCapture(const FString& OutputPath, int32 Width, int32 Height, FName Format);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Preview")
+    FCharacterCreatorPortraitCaptureState GetPortraitCaptureState() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Input")
+    void SetControllerHint(FName ActionId, const FText& Hint);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Input")
+    FCharacterCreatorControllerHintState GetControllerHintState() const;
+
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Onboarding")
     void AdvanceOnboarding();
 
@@ -1005,4 +1146,5 @@ private:
     TArray<FCharacterPreset> Presets;
     FCharacterCreatorImportProgress ImportProgress;
     FCharacterCreatorOnboardingState OnboardingState;
+    FDateTime GameplayTestStartUtc;
 };

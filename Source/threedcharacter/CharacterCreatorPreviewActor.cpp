@@ -401,6 +401,40 @@ void ACharacterCreatorPreviewActor::ApplyAppearance(const FCharacterAppearanceSt
     }
 
     ApplyMaterialParameters(Appearance);
+
+    ECharacterCreatorPreviewCameraMode CameraMode = ECharacterCreatorPreviewCameraMode::Front;
+    if (Appearance.PreviewTesting.Studio.CameraMode == FName(TEXT("ThreeQuarter"))) CameraMode = ECharacterCreatorPreviewCameraMode::ThreeQuarter;
+    if (Appearance.PreviewTesting.Studio.CameraMode == FName(TEXT("Side"))) CameraMode = ECharacterCreatorPreviewCameraMode::Side;
+    if (Appearance.PreviewTesting.Studio.CameraMode == FName(TEXT("Portrait"))) CameraMode = ECharacterCreatorPreviewCameraMode::Portrait;
+    SetCameraMode(CameraMode);
+    const float Zoom = FMath::Clamp(Appearance.PreviewTesting.Studio.Zoom, 0.5f, 2.0f);
+    if (PreviewCamera)
+    {
+        PreviewCamera->FieldOfView /= Zoom;
+    }
+    if (SceneCapture)
+    {
+        SceneCapture->FOVAngle /= Zoom;
+    }
+
+    if (Appearance.PreviewTesting.Studio.LightingProfile == FName(TEXT("Dramatic")))
+    {
+        KeyLight->Intensity = 3000.0f;
+        FillLight->Intensity = 650.0f;
+        RimLight->Intensity = 2400.0f;
+    }
+    else if (Appearance.PreviewTesting.Studio.LightingProfile == FName(TEXT("Soft")))
+    {
+        KeyLight->Intensity = 1700.0f;
+        FillLight->Intensity = 1500.0f;
+        RimLight->Intensity = 900.0f;
+    }
+    else
+    {
+        KeyLight->Intensity = 2400.0f;
+        FillLight->Intensity = 1200.0f;
+        RimLight->Intensity = 1800.0f;
+    }
 }
 
 void ACharacterCreatorPreviewActor::ApplyLoadedAssets(const FCharacterAppearanceState& Appearance)

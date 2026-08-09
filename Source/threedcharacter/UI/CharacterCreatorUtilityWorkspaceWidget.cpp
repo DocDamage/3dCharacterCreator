@@ -319,6 +319,14 @@ FText UCharacterCreatorUtilityWorkspaceWidget::GetUtilitySummary(const FCharacte
         return Appearance.Technical.LOD.ProfileSummary.IsEmpty()
             ? FText::FromString(TEXT("Preview profile: live render target / Sidekick mesh"))
             : Appearance.Technical.LOD.ProfileSummary;
+    case ECharacterCreatorScreen::GameplayTest:
+        return Appearance.PreviewTesting.Gameplay.LastResult.IsEmpty()
+            ? FText::FromString(TEXT("Gameplay test idle • movement and combat actions ready"))
+            : Appearance.PreviewTesting.Gameplay.LastResult;
+    case ECharacterCreatorScreen::PortraitStudio:
+        return Appearance.PreviewTesting.Portrait.bCaptureReady
+            ? FText::FromString(FString::Printf(TEXT("Portrait ready • %dx%d %s"), Appearance.PreviewTesting.Portrait.Width, Appearance.PreviewTesting.Portrait.Height, *Appearance.PreviewTesting.Portrait.Format.ToString()))
+            : FText::FromString(TEXT("Portrait capture not prepared"));
     case ECharacterCreatorScreen::ImportWizard:
         return FText::FromString(TEXT("FAB pack available under /Game/FreeAnimationsPack"));
     default:
@@ -347,18 +355,29 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
 
     if (IsCommand(CommandId, TEXT("camera_front")) && PreviewActor)
     {
+        FCharacterCreatorPreviewStudioState StudioState = Session->GetPreviewStudioState();
+        StudioState.CameraMode = FName(TEXT("Front"));
+        Session->SetPreviewStudioState(StudioState);
         PreviewActor->SetCameraMode(ECharacterCreatorPreviewCameraMode::Front);
         Session->SetStatusMessage(FText::FromString(TEXT("Preview camera set to front")));
         return;
     }
     if (IsCommand(CommandId, TEXT("camera_three_quarter")) && PreviewActor)
     {
+        FCharacterCreatorPreviewStudioState StudioState = Session->GetPreviewStudioState();
+        StudioState.CameraMode = FName(TEXT("ThreeQuarter"));
+        Session->SetPreviewStudioState(StudioState);
         PreviewActor->SetCameraMode(ECharacterCreatorPreviewCameraMode::ThreeQuarter);
         Session->SetStatusMessage(FText::FromString(TEXT("Preview camera set to three-quarter")));
         return;
     }
     if (IsCommand(CommandId, TEXT("portrait_capture")) && PreviewActor)
     {
+        const FString OutputPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Portraits"), TEXT("ActiveCharacter.png"));
+        Session->PreparePortraitCapture(OutputPath, 1024, 1024, FName(TEXT("PNG")));
+        FCharacterCreatorPreviewStudioState StudioState = Session->GetPreviewStudioState();
+        StudioState.CameraMode = FName(TEXT("Portrait"));
+        Session->SetPreviewStudioState(StudioState);
         PreviewActor->SetCameraMode(ECharacterCreatorPreviewCameraMode::Portrait);
         Session->SetStatusMessage(FText::FromString(TEXT("Portrait camera framing prepared")));
         return;
@@ -374,6 +393,14 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
         PhysicsState.bUsePhysicalAnimation = true;
         Session->SetPhysicsSetup(PhysicsState);
         Session->SetStatusMessage(FText::FromString(TEXT("Physics asset and collision profile validated")));
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("portrait_lighting")))
+    {
+        FCharacterCreatorPreviewStudioState StudioState = Session->GetPreviewStudioState();
+        StudioState.LightingProfile = FName(TEXT("Dramatic"));
+        Session->SetPreviewStudioState(StudioState);
+        Session->SetStatusMessage(FText::FromString(TEXT("Dramatic portrait lighting enabled")));
         return;
     }
     if (IsCommand(CommandId, TEXT("physics_inspect")))
@@ -399,8 +426,18 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
     }
 
     const TCHAR* Message = TEXT("Production action queued");
-    if (IsCommand(CommandId, TEXT("gameplay_start"))) Message = TEXT("Gameplay test workspace started");
-    if (IsCommand(CommandId, TEXT("gameplay_stop"))) Message = TEXT("Gameplay test workspace stopped");
+    if (IsCommand(CommandId, TEXT("gameplay_start")))
+    {
+        Session->StartGameplayTest();
+        Session->RecordGameplayAction(FName(TEXT("Start")));
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("gameplay_stop")))
+    {
+        Session->RecordGameplayAction(FName(TEXT("Stop")));
+        Session->StopGameplayTest(true);
+        return;
+    }
     if (IsCommand(CommandId, TEXT("settings_gamepad"))) Message = TEXT("Gamepad navigation preference queued");
     if (IsCommand(CommandId, TEXT("settings_onboarding")))
     {

@@ -441,6 +441,10 @@ void UCharacterCreatorSession::InitializeDefaults()
     PracticeStaff.SocketName = FName(TEXT("hand_r"));
     PracticeStaff.bEnabled = false;
     AppearanceState.Equipment.WeaponLibrary.Add(PracticeStaff.WeaponId, PracticeStaff);
+    AppearanceState.PreviewTesting.Controller.Hints.Add(FName(TEXT("Confirm")), FText::FromString(TEXT("A  Apply / Confirm")));
+    AppearanceState.PreviewTesting.Controller.Hints.Add(FName(TEXT("Cancel")), FText::FromString(TEXT("B  Cancel / Revert")));
+    AppearanceState.PreviewTesting.Controller.Hints.Add(FName(TEXT("Navigate")), FText::FromString(TEXT("D-Pad  Navigate")));
+    AppearanceState.PreviewTesting.Controller.Hints.Add(FName(TEXT("SwitchWorkspace")), FText::FromString(TEXT("LB / RB  Switch workspace")));
     AppearanceState.bHasUnsavedChanges = false;
     SavedAppearanceState = AppearanceState;
 
@@ -1139,6 +1143,117 @@ bool UCharacterCreatorSession::RunLODPerformanceProfile()
 FCharacterCreatorLODPerformanceState UCharacterCreatorSession::GetLODPerformance() const
 {
     return AppearanceState.Technical.LOD;
+}
+
+void UCharacterCreatorSession::StartGameplayTest()
+{
+    AppearanceState.PreviewTesting.Gameplay = FCharacterCreatorGameplayTestStateData();
+    AppearanceState.PreviewTesting.Gameplay.State = ECharacterCreatorGameplayTestState::Running;
+    AppearanceState.PreviewTesting.Gameplay.LastResult = FText::FromString(TEXT("Gameplay test running"));
+    GameplayTestStartUtc = FDateTime::UtcNow();
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(FText::FromString(TEXT("Gameplay test started: movement and combat actions are ready")));
+}
+
+void UCharacterCreatorSession::RecordGameplayAction(FName ActionId)
+{
+    if (ActionId.IsNone() || AppearanceState.PreviewTesting.Gameplay.State != ECharacterCreatorGameplayTestState::Running)
+    {
+        return;
+    }
+
+    AppearanceState.PreviewTesting.Gameplay.Actions.AddUnique(ActionId);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::StopGameplayTest(bool bPassed)
+{
+    if (AppearanceState.PreviewTesting.Gameplay.State != ECharacterCreatorGameplayTestState::Running)
+    {
+        return;
+    }
+
+    const FTimespan Duration = FDateTime::UtcNow() - GameplayTestStartUtc;
+    AppearanceState.PreviewTesting.Gameplay.LastDurationSeconds = static_cast<float>(Duration.GetTotalSeconds());
+    AppearanceState.PreviewTesting.Gameplay.State = bPassed ? ECharacterCreatorGameplayTestState::Passed : ECharacterCreatorGameplayTestState::Failed;
+    AppearanceState.PreviewTesting.Gameplay.LastResult = bPassed
+        ? FText::FromString(TEXT("Gameplay test passed"))
+        : FText::FromString(TEXT("Gameplay test failed; review the recorded actions"));
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(AppearanceState.PreviewTesting.Gameplay.LastResult);
+}
+
+FCharacterCreatorGameplayTestStateData UCharacterCreatorSession::GetGameplayTestState() const
+{
+    return AppearanceState.PreviewTesting.Gameplay;
+}
+
+void UCharacterCreatorSession::SetPreviewStudioState(const FCharacterCreatorPreviewStudioState& NewState)
+{
+    FCharacterCreatorPreviewStudioState SanitizedState = NewState;
+    SanitizedState.Zoom = FMath::Clamp(SanitizedState.Zoom, 0.5f, 2.0f);
+    SanitizedState.OrbitYaw = FMath::Clamp(SanitizedState.OrbitYaw, -180.0f, 180.0f);
+    SanitizedState.OrbitPitch = FMath::Clamp(SanitizedState.OrbitPitch, -80.0f, 80.0f);
+    if (SanitizedState.CameraMode.IsNone()) SanitizedState.CameraMode = FName(TEXT("Front"));
+    if (SanitizedState.Environment.IsNone()) SanitizedState.Environment = FName(TEXT("Studio"));
+    if (SanitizedState.LightingProfile.IsNone()) SanitizedState.LightingProfile = FName(TEXT("ThreePoint"));
+    AppearanceState.PreviewTesting.Studio = SanitizedState;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FCharacterCreatorPreviewStudioState UCharacterCreatorSession::GetPreviewStudioState() const
+{
+    return AppearanceState.PreviewTesting.Studio;
+}
+
+bool UCharacterCreatorSession::PreparePortraitCapture(const FString& OutputPath, int32 Width, int32 Height, FName Format)
+{
+    if (OutputPath.IsEmpty() || Width <= 0 || Height <= 0)
+    {
+        AppearanceState.PreviewTesting.Portrait.bCaptureReady = false;
+        AppearanceState.PreviewTesting.Portrait.OutputPath.Reset();
+        AppearanceState.bHasUnsavedChanges = true;
+        OnAppearanceChanged.Broadcast(AppearanceState);
+        return false;
+    }
+
+    FCharacterCreatorPortraitCaptureState& Portrait = AppearanceState.PreviewTesting.Portrait;
+    Portrait.OutputPath = OutputPath;
+    Portrait.Width = FMath::Clamp(Width, 128, 4096);
+    Portrait.Height = FMath::Clamp(Height, 128, 4096);
+    Portrait.Format = Format.IsNone() ? FName(TEXT("PNG")) : Format;
+    Portrait.LastCaptureUtc = FDateTime::UtcNow();
+    Portrait.bCaptureReady = true;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(FText::FromString(FString::Printf(TEXT("Portrait capture prepared at %dx%d"), Portrait.Width, Portrait.Height)));
+    return true;
+}
+
+FCharacterCreatorPortraitCaptureState UCharacterCreatorSession::GetPortraitCaptureState() const
+{
+    return AppearanceState.PreviewTesting.Portrait;
+}
+
+void UCharacterCreatorSession::SetControllerHint(FName ActionId, const FText& Hint)
+{
+    if (ActionId.IsNone() || Hint.IsEmpty())
+    {
+        return;
+    }
+
+    AppearanceState.PreviewTesting.Controller.Hints.Add(ActionId, Hint);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FCharacterCreatorControllerHintState UCharacterCreatorSession::GetControllerHintState() const
+{
+    return AppearanceState.PreviewTesting.Controller;
 }
 
 void UCharacterCreatorSession::AdvanceOnboarding()

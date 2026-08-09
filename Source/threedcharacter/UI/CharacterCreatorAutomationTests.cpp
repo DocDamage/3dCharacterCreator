@@ -103,6 +103,26 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("LOD performance profile stays within its default budget"), Session->RunLODPerformanceProfile());
     TestTrue(TEXT("LOD performance profile estimates memory"), Session->GetLODPerformance().EstimatedMemoryKB > 0);
 
+    Session->StartGameplayTest();
+    Session->RecordGameplayAction(FName(TEXT("MoveForward")));
+    Session->RecordGameplayAction(FName(TEXT("Attack")));
+    Session->StopGameplayTest(true);
+    TestEqual(TEXT("Gameplay test reaches passed state"), Session->GetGameplayTestState().State, ECharacterCreatorGameplayTestState::Passed);
+    TestEqual(TEXT("Gameplay test records movement and combat actions"), Session->GetGameplayTestState().Actions.Num(), 2);
+
+    FCharacterCreatorPreviewStudioState StudioState;
+    StudioState.CameraMode = FName(TEXT("Portrait"));
+    StudioState.LightingProfile = FName(TEXT("Dramatic"));
+    StudioState.Zoom = 9.0f;
+    Session->SetPreviewStudioState(StudioState);
+    TestEqual(TEXT("Preview studio camera mode persists"), Session->GetPreviewStudioState().CameraMode, FName(TEXT("Portrait")));
+    TestTrue(TEXT("Preview studio zoom is constrained"), Session->GetPreviewStudioState().Zoom <= 2.0f);
+
+    TestTrue(TEXT("Portrait capture preparation succeeds"), Session->PreparePortraitCapture(TEXT("Saved/Portrait.png"), 32, 8192, FName(TEXT("PNG"))));
+    TestTrue(TEXT("Portrait capture clamps to a usable size"), Session->GetPortraitCaptureState().Width >= 128 && Session->GetPortraitCaptureState().Height <= 4096);
+    Session->SetControllerHint(FName(TEXT("TestAction")), FText::FromString(TEXT("Test hint")));
+    TestTrue(TEXT("Controller hints are persisted"), Session->GetControllerHintState().Hints.Contains(FName(TEXT("TestAction"))));
+
     const FCharacterPreset Duplicate = Session->CreatePresetFromCurrent(FText::FromString(TEXT("Test Preset")), FText::FromString(TEXT("Automation preset")));
     TestTrue(TEXT("Preset has a valid id"), Duplicate.PresetId.IsValid());
     TestTrue(TEXT("Preset duplicate succeeds"), Session->DuplicatePreset(Duplicate.PresetId));
