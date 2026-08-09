@@ -433,7 +433,16 @@ void ACharacterCreatorPreviewActor::ApplyLoadedAssets(const FCharacterAppearance
     {
         UStaticMesh* LoadedWeapon = Cast<UStaticMesh>(Appearance.Loadout.WeaponMesh.ResolveObject());
         WeaponMesh->SetStaticMesh(LoadedWeapon);
-        WeaponMesh->SetVisibility(Appearance.Loadout.bWeaponEnabled && LoadedWeapon != nullptr);
+        const FCharacterCreatorWeaponSetup MainHandWeapon = Appearance.Equipment.GetWeapon(ECharacterCreatorWeaponSlot::MainHand);
+        const FName SocketName = MainHandWeapon.SocketName.IsNone() ? Appearance.IK.RightHandSocket : MainHandWeapon.SocketName;
+        if (CharacterMesh && !SocketName.IsNone())
+        {
+            WeaponMesh->AttachToComponent(CharacterMesh, FAttachmentTransformRules::SnapToTargetNotIncludingScale, SocketName);
+        }
+        WeaponMesh->SetRelativeLocation(MainHandWeapon.GripLocation);
+        WeaponMesh->SetRelativeRotation(MainHandWeapon.GripRotation);
+        WeaponMesh->SetRelativeScale3D(MainHandWeapon.GripScale);
+        WeaponMesh->SetVisibility(Appearance.Loadout.bWeaponEnabled && MainHandWeapon.bEnabled && LoadedWeapon != nullptr);
     }
 }
 
@@ -485,6 +494,44 @@ void ACharacterCreatorPreviewActor::ApplyMaterialParameters(const FCharacterAppe
     ApplyColorToComponent(OutfitMesh, Appearance.PrimaryOutfitColor);
     ApplyColorToComponent(HairMesh, Appearance.HairColor);
     ApplyColorToComponent(WeaponMesh, Appearance.SecondaryOutfitColor);
+
+    const auto ApplyMaterialState = [](UMeshComponent* Component, const FCharacterCreatorMaterialSlotState& State)
+    {
+        if (!Component)
+        {
+            return;
+        }
+
+        for (int32 MaterialIndex = 0; MaterialIndex < Component->GetNumMaterials(); ++MaterialIndex)
+        {
+            if (UMaterialInstanceDynamic* DynamicMaterial = Component->CreateDynamicMaterialInstance(MaterialIndex))
+            {
+                DynamicMaterial->SetVectorParameterValue(TEXT("BaseColor"), State.Tint);
+                DynamicMaterial->SetVectorParameterValue(TEXT("Base Color"), State.Tint);
+                DynamicMaterial->SetScalarParameterValue(TEXT("Metallic"), State.Metallic);
+                DynamicMaterial->SetScalarParameterValue(TEXT("Roughness"), State.Roughness);
+                DynamicMaterial->SetScalarParameterValue(TEXT("EmissiveStrength"), State.EmissiveStrength);
+                DynamicMaterial->SetScalarParameterValue(TEXT("PatternScale"), State.PatternScale);
+            }
+        }
+    };
+
+    if (const FCharacterCreatorMaterialSlotState* SkinState = Appearance.Equipment.MaterialSlots.Find(FName(TEXT("Skin"))))
+    {
+        ApplyMaterialState(CharacterMesh, *SkinState);
+    }
+    if (const FCharacterCreatorMaterialSlotState* HairState = Appearance.Equipment.MaterialSlots.Find(FName(TEXT("Hair"))))
+    {
+        ApplyMaterialState(HairMesh, *HairState);
+    }
+    if (const FCharacterCreatorMaterialSlotState* OutfitState = Appearance.Equipment.MaterialSlots.Find(FName(TEXT("PrimaryOutfit"))))
+    {
+        ApplyMaterialState(OutfitMesh, *OutfitState);
+    }
+    if (const FCharacterCreatorMaterialSlotState* SecondaryOutfitState = Appearance.Equipment.MaterialSlots.Find(FName(TEXT("SecondaryOutfit"))))
+    {
+        ApplyMaterialState(WeaponMesh, *SecondaryOutfitState);
+    }
 }
 
 void ACharacterCreatorPreviewActor::UseFallbackMesh(const FText& Reason, bool bFailedLoad)

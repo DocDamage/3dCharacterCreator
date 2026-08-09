@@ -121,6 +121,14 @@ enum class ECharacterCreatorIKTarget : uint8
 };
 
 UENUM(BlueprintType)
+enum class ECharacterCreatorWeaponSlot : uint8
+{
+    MainHand,
+    OffHand,
+    Back
+};
+
+UENUM(BlueprintType)
 enum class ECharacterCreatorAnimationState : uint8
 {
     Unassigned,
@@ -206,6 +214,95 @@ struct THREEDCHARACTER_API FCharacterCreatorIKState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|IK")
     float FeetIKWeight = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|IK")
+    FName RightHandSocket = TEXT("hand_r");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|IK")
+    FName LeftHandSocket = TEXT("hand_l");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|IK")
+    FName LeftFootSocket = TEXT("foot_l");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|IK")
+    FName RightFootSocket = TEXT("foot_r");
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorMaterialSlotState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Materials")
+    FLinearColor Tint = FLinearColor::White;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Materials")
+    float Metallic = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Materials")
+    float Roughness = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Materials")
+    float EmissiveStrength = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Materials")
+    float PatternScale = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Materials")
+    FName PatternId = TEXT("None");
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorWeaponSetup
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    FName WeaponId = NAME_None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    FText DisplayName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    FSoftObjectPath AssetPath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    FName SocketName = TEXT("hand_r");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    FVector GripLocation = FVector::ZeroVector;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    FRotator GripRotation = FRotator::ZeroRotator;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    FVector GripScale = FVector(1.0f, 1.0f, 1.0f);
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    bool bEnabled = true;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorEquipmentState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Materials")
+    TMap<FName, FCharacterCreatorMaterialSlotState> MaterialSlots;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    TMap<ECharacterCreatorWeaponSlot, FCharacterCreatorWeaponSetup> Weapons;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    TMap<FName, FCharacterCreatorWeaponSetup> WeaponLibrary;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Weapons")
+    FName ActiveWeaponId = NAME_None;
+
+    FCharacterCreatorMaterialSlotState GetMaterialSlot(FName SlotId) const;
+    void SetMaterialSlot(FName SlotId, const FCharacterCreatorMaterialSlotState& State);
+    FCharacterCreatorWeaponSetup GetWeapon(ECharacterCreatorWeaponSlot Slot) const;
+    void SetWeapon(ECharacterCreatorWeaponSlot Slot, const FCharacterCreatorWeaponSetup& Setup);
 };
 
 USTRUCT(BlueprintType)
@@ -342,6 +439,9 @@ struct THREEDCHARACTER_API FCharacterAppearanceState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|State")
     FCharacterCreatorIKState IK;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Equipment")
+    FCharacterCreatorEquipmentState Equipment;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|State")
     FCharacterCreatorAnimationState Animation;
@@ -549,6 +649,30 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Character Creator|Materials")
     FLinearColor GetColorTarget(ECharacterCreatorColorTarget Target) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Materials")
+    void SetMaterialSlotState(FName SlotId, const FCharacterCreatorMaterialSlotState& NewState);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Materials")
+    FCharacterCreatorMaterialSlotState GetMaterialSlotState(FName SlotId) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Weapons")
+    void SetWeaponSetup(ECharacterCreatorWeaponSlot Slot, const FCharacterCreatorWeaponSetup& Setup);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Weapons")
+    FCharacterCreatorWeaponSetup GetWeaponSetup(ECharacterCreatorWeaponSlot Slot) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Weapons")
+    void SetWeaponGrip(ECharacterCreatorWeaponSlot Slot, const FVector& Location, const FRotator& Rotation, const FVector& Scale);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Weapons")
+    void SetWeaponSocket(ECharacterCreatorWeaponSlot Slot, FName SocketName);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Weapons")
+    void RegisterWeaponDefinition(const FCharacterCreatorWeaponSetup& Setup);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Weapons")
+    TArray<FCharacterCreatorWeaponSetup> GetWeaponLibrary() const;
 
     UFUNCTION(BlueprintCallable, Category = "Character Creator|IK")
     void SetIKEnabled(ECharacterCreatorIKTarget Target, bool bEnabled);

@@ -270,6 +270,8 @@ void UCharacterCreatorWorkflowScreenWidget::BuildMaterialsInspector(UCanvasPanel
     AddCommandButton(Canvas, TEXT("EMBER / GOLD"), FName(TEXT("palette_ember")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Accent);
     AddCommandButton(Canvas, TEXT("OCEAN / STEEL"), FName(TEXT("palette_ocean")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
     AddCommandButton(Canvas, TEXT("FOREST / BRASS"), FName(TEXT("palette_forest")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+    AddCommandButton(Canvas, TEXT("MATTE FABRIC FINISH"), FName(TEXT("material_matte")), FVector2D(1012.0f, 338.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+    AddCommandButton(Canvas, TEXT("METALLIC ACCENT FINISH"), FName(TEXT("material_metallic")), FVector2D(1012.0f, 390.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddLabel(WidgetTree, Canvas, TEXT("SelectionLabel"), TEXT("COLOR TARGETS"), FVector2D(1012.0f, 360.0f), FVector2D(220.0f, 16.0f), 9, Palette.Muted);
     SelectionSummaryText = Label(WidgetTree, TEXT("Skin / hair / primary / secondary"), 11, Palette.Text);
     Place(Canvas, SelectionSummaryText, FVector2D(1012.0f, 382.0f), FVector2D(352.0f, 54.0f));
@@ -281,8 +283,9 @@ void UCharacterCreatorWorkflowScreenWidget::BuildWeaponsInspector(UCanvasPanel* 
     AddLabel(WidgetTree, Canvas, TEXT("InspectorHeading"), TEXT("WEAPONS + IK"), FVector2D(1012.0f, 96.0f), FVector2D(260.0f, 20.0f), 10, Palette.Muted);
     AddLabel(WidgetTree, Canvas, TEXT("InspectorHint"), TEXT("Prepare the hand socket and IK pass."), FVector2D(1012.0f, 124.0f), FVector2D(360.0f, 20.0f), 10, Palette.Muted);
     AddCommandButton(Canvas, TEXT("EMPTY HAND SOCKET"), FName(TEXT("weapon_none")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
-    AddCommandButton(Canvas, TEXT("ENABLE RIGHT-HAND IK"), FName(TEXT("ik_right")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
-    AddCommandButton(Canvas, TEXT("ENABLE FOOT IK"), FName(TEXT("ik_foot")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+    AddCommandButton(Canvas, TEXT("REGISTER TRAINING BLADE"), FName(TEXT("weapon_register_training")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+    AddCommandButton(Canvas, TEXT("ENABLE RIGHT-HAND IK"), FName(TEXT("ik_right")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+    AddCommandButton(Canvas, TEXT("ENABLE FOOT IK"), FName(TEXT("ik_foot")), FVector2D(1012.0f, 338.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddLabel(WidgetTree, Canvas, TEXT("SelectionLabel"), TEXT("SOCKET STATUS"), FVector2D(1012.0f, 360.0f), FVector2D(220.0f, 16.0f), 9, Palette.Muted);
     SelectionSummaryText = Label(WidgetTree, TEXT("No weapon asset assigned"), 11, Palette.Text);
     Place(Canvas, SelectionSummaryText, FVector2D(1012.0f, 382.0f), FVector2D(352.0f, 54.0f));
@@ -526,6 +529,18 @@ void UCharacterCreatorWorkflowScreenWidget::HandleCommand(FName CommandId)
         Session->SetLoadoutAsset(ECharacterCreatorLoadoutSlot::Weapon, FSoftObjectPath());
         return;
     }
+    if (IsCommand(CommandId, TEXT("weapon_register_training")))
+    {
+        FCharacterCreatorWeaponSetup Setup;
+        Setup.WeaponId = FName(TEXT("TrainingBlade"));
+        Setup.DisplayName = FText::FromString(TEXT("Training Blade"));
+        Setup.SocketName = FName(TEXT("hand_r"));
+        Setup.bEnabled = false;
+        Session->RegisterWeaponDefinition(Setup);
+        Session->SetWeaponSetup(ECharacterCreatorWeaponSlot::MainHand, Setup);
+        Session->SetStatusMessage(FText::FromString(TEXT("Training blade profile registered; assign its mesh in Asset Browser")));
+        return;
+    }
     if (IsCommand(CommandId, TEXT("palette_ember")))
     {
         ApplyMaterialPreset({
@@ -554,6 +569,22 @@ void UCharacterCreatorWorkflowScreenWidget::HandleCommand(FName CommandId)
             FLinearColor(0.08f, 0.25f, 0.15f, 1.0f),
             FLinearColor(0.55f, 0.42f, 0.12f, 1.0f)
         });
+        return;
+    }
+
+    if (IsCommand(CommandId, TEXT("material_matte")) || IsCommand(CommandId, TEXT("material_metallic")))
+    {
+        const bool bMetallic = IsCommand(CommandId, TEXT("material_metallic"));
+        const TArray<FName> Slots = { FName(TEXT("Skin")), FName(TEXT("Hair")), FName(TEXT("PrimaryOutfit")), FName(TEXT("SecondaryOutfit")) };
+        for (const FName MaterialSlotId : Slots)
+        {
+            FCharacterCreatorMaterialSlotState State = Session->GetMaterialSlotState(MaterialSlotId);
+            State.Metallic = bMetallic ? 0.82f : 0.05f;
+            State.Roughness = bMetallic ? 0.24f : 0.74f;
+            State.PatternId = bMetallic ? FName(TEXT("BrushedMetal")) : FName(TEXT("Woven"));
+            Session->SetMaterialSlotState(MaterialSlotId, State);
+        }
+        Session->SetStatusMessage(FText::FromString(bMetallic ? TEXT("Metallic accent finish applied") : TEXT("Matte fabric finish applied")));
         return;
     }
 

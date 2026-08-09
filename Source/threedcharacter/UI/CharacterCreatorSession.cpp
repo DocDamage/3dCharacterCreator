@@ -103,6 +103,37 @@ void FCharacterCreatorClothingState::SetSlotAsset(ECharacterCreatorClothingSlot 
     }
 }
 
+FCharacterCreatorMaterialSlotState FCharacterCreatorEquipmentState::GetMaterialSlot(FName SlotId) const
+{
+    if (const FCharacterCreatorMaterialSlotState* State = MaterialSlots.Find(SlotId))
+    {
+        return *State;
+    }
+    return FCharacterCreatorMaterialSlotState();
+}
+
+void FCharacterCreatorEquipmentState::SetMaterialSlot(FName SlotId, const FCharacterCreatorMaterialSlotState& State)
+{
+    if (!SlotId.IsNone())
+    {
+        MaterialSlots.Add(SlotId, State);
+    }
+}
+
+FCharacterCreatorWeaponSetup FCharacterCreatorEquipmentState::GetWeapon(ECharacterCreatorWeaponSlot Slot) const
+{
+    if (const FCharacterCreatorWeaponSetup* Setup = Weapons.Find(Slot))
+    {
+        return *Setup;
+    }
+    return FCharacterCreatorWeaponSetup();
+}
+
+void FCharacterCreatorEquipmentState::SetWeapon(ECharacterCreatorWeaponSlot Slot, const FCharacterCreatorWeaponSetup& Setup)
+{
+    Weapons.Add(Slot, Setup);
+}
+
 bool FCharacterAssetReferences::IsEmpty() const
 {
     return SkeletalMesh.IsNull()
@@ -373,6 +404,39 @@ void UCharacterCreatorSession::SetActivePreset(const FCharacterPreset& NewPreset
 void UCharacterCreatorSession::InitializeDefaults()
 {
     AppearanceState = FCharacterAppearanceState();
+    FCharacterCreatorMaterialSlotState SkinMaterial;
+    SkinMaterial.Tint = AppearanceState.SkinColor;
+    SkinMaterial.Roughness = AppearanceState.Grooming.SkinRoughness;
+    AppearanceState.Equipment.SetMaterialSlot(FName(TEXT("Skin")), SkinMaterial);
+
+    FCharacterCreatorMaterialSlotState HairMaterial;
+    HairMaterial.Tint = AppearanceState.HairColor;
+    HairMaterial.Roughness = AppearanceState.Grooming.HairRoughness;
+    AppearanceState.Equipment.SetMaterialSlot(FName(TEXT("Hair")), HairMaterial);
+
+    FCharacterCreatorMaterialSlotState OutfitMaterial;
+    OutfitMaterial.Tint = AppearanceState.PrimaryOutfitColor;
+    OutfitMaterial.Roughness = 0.62f;
+    AppearanceState.Equipment.SetMaterialSlot(FName(TEXT("PrimaryOutfit")), OutfitMaterial);
+
+    FCharacterCreatorMaterialSlotState SecondaryOutfitMaterial;
+    SecondaryOutfitMaterial.Tint = AppearanceState.SecondaryOutfitColor;
+    SecondaryOutfitMaterial.Roughness = 0.48f;
+    AppearanceState.Equipment.SetMaterialSlot(FName(TEXT("SecondaryOutfit")), SecondaryOutfitMaterial);
+
+    FCharacterCreatorWeaponSetup TrainingBlade;
+    TrainingBlade.WeaponId = FName(TEXT("TrainingBlade"));
+    TrainingBlade.DisplayName = FText::FromString(TEXT("Training Blade"));
+    TrainingBlade.SocketName = FName(TEXT("hand_r"));
+    TrainingBlade.bEnabled = false;
+    AppearanceState.Equipment.WeaponLibrary.Add(TrainingBlade.WeaponId, TrainingBlade);
+
+    FCharacterCreatorWeaponSetup PracticeStaff;
+    PracticeStaff.WeaponId = FName(TEXT("PracticeStaff"));
+    PracticeStaff.DisplayName = FText::FromString(TEXT("Practice Staff"));
+    PracticeStaff.SocketName = FName(TEXT("hand_r"));
+    PracticeStaff.bEnabled = false;
+    AppearanceState.Equipment.WeaponLibrary.Add(PracticeStaff.WeaponId, PracticeStaff);
     AppearanceState.bHasUnsavedChanges = false;
     SavedAppearanceState = AppearanceState;
 
@@ -597,6 +661,21 @@ void UCharacterCreatorSession::SetColorTarget(ECharacterCreatorColorTarget Targe
     }
 
     *TargetColor = NewColor;
+    FName MaterialSlot = NAME_None;
+    switch (Target)
+    {
+    case ECharacterCreatorColorTarget::Skin: MaterialSlot = FName(TEXT("Skin")); break;
+    case ECharacterCreatorColorTarget::Hair: MaterialSlot = FName(TEXT("Hair")); break;
+    case ECharacterCreatorColorTarget::PrimaryOutfit: MaterialSlot = FName(TEXT("PrimaryOutfit")); break;
+    case ECharacterCreatorColorTarget::SecondaryOutfit: MaterialSlot = FName(TEXT("SecondaryOutfit")); break;
+    default: break;
+    }
+    if (!MaterialSlot.IsNone())
+    {
+        FCharacterCreatorMaterialSlotState MaterialState = AppearanceState.Equipment.GetMaterialSlot(MaterialSlot);
+        MaterialState.Tint = NewColor;
+        AppearanceState.Equipment.SetMaterialSlot(MaterialSlot, MaterialState);
+    }
     AppearanceState.bHasUnsavedChanges = true;
     OnAppearanceChanged.Broadcast(AppearanceState);
 }
@@ -616,6 +695,111 @@ FLinearColor UCharacterCreatorSession::GetColorTarget(ECharacterCreatorColorTarg
     default:
         return FLinearColor::White;
     }
+}
+
+void UCharacterCreatorSession::SetMaterialSlotState(FName SlotId, const FCharacterCreatorMaterialSlotState& NewState)
+{
+    if (SlotId.IsNone())
+    {
+        return;
+    }
+
+    FCharacterCreatorMaterialSlotState SanitizedState = NewState;
+    SanitizedState.Metallic = FMath::Clamp(SanitizedState.Metallic, 0.0f, 1.0f);
+    SanitizedState.Roughness = FMath::Clamp(SanitizedState.Roughness, 0.0f, 1.0f);
+    SanitizedState.EmissiveStrength = FMath::Max(0.0f, SanitizedState.EmissiveStrength);
+    SanitizedState.PatternScale = FMath::Max(0.01f, SanitizedState.PatternScale);
+
+    const FCharacterCreatorMaterialSlotState CurrentState = AppearanceState.Equipment.GetMaterialSlot(SlotId);
+    if (CurrentState.Tint == SanitizedState.Tint
+        && FMath::IsNearlyEqual(CurrentState.Metallic, SanitizedState.Metallic)
+        && FMath::IsNearlyEqual(CurrentState.Roughness, SanitizedState.Roughness)
+        && FMath::IsNearlyEqual(CurrentState.EmissiveStrength, SanitizedState.EmissiveStrength)
+        && FMath::IsNearlyEqual(CurrentState.PatternScale, SanitizedState.PatternScale)
+        && CurrentState.PatternId == SanitizedState.PatternId)
+    {
+        return;
+    }
+
+    AppearanceState.Equipment.SetMaterialSlot(SlotId, SanitizedState);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FCharacterCreatorMaterialSlotState UCharacterCreatorSession::GetMaterialSlotState(FName SlotId) const
+{
+    return AppearanceState.Equipment.GetMaterialSlot(SlotId);
+}
+
+void UCharacterCreatorSession::SetWeaponSetup(ECharacterCreatorWeaponSlot Slot, const FCharacterCreatorWeaponSetup& Setup)
+{
+    FCharacterCreatorWeaponSetup SanitizedSetup = Setup;
+    SanitizedSetup.GripScale.X = FMath::Max(0.01f, SanitizedSetup.GripScale.X);
+    SanitizedSetup.GripScale.Y = FMath::Max(0.01f, SanitizedSetup.GripScale.Y);
+    SanitizedSetup.GripScale.Z = FMath::Max(0.01f, SanitizedSetup.GripScale.Z);
+    if (SanitizedSetup.SocketName.IsNone())
+    {
+        SanitizedSetup.SocketName = Slot == ECharacterCreatorWeaponSlot::OffHand ? FName(TEXT("hand_l")) : FName(TEXT("hand_r"));
+    }
+
+    AppearanceState.Equipment.SetWeapon(Slot, SanitizedSetup);
+    if (Slot == ECharacterCreatorWeaponSlot::MainHand)
+    {
+        AppearanceState.Loadout.WeaponMesh = SanitizedSetup.AssetPath;
+        AppearanceState.Loadout.bWeaponEnabled = SanitizedSetup.bEnabled && !SanitizedSetup.AssetPath.IsNull();
+        AppearanceState.Equipment.ActiveWeaponId = SanitizedSetup.WeaponId;
+    }
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FCharacterCreatorWeaponSetup UCharacterCreatorSession::GetWeaponSetup(ECharacterCreatorWeaponSlot Slot) const
+{
+    return AppearanceState.Equipment.GetWeapon(Slot);
+}
+
+void UCharacterCreatorSession::SetWeaponGrip(ECharacterCreatorWeaponSlot Slot, const FVector& Location, const FRotator& Rotation, const FVector& Scale)
+{
+    FCharacterCreatorWeaponSetup Setup = AppearanceState.Equipment.GetWeapon(Slot);
+    Setup.GripLocation = Location;
+    Setup.GripRotation = Rotation;
+    Setup.GripScale = Scale;
+    SetWeaponSetup(Slot, Setup);
+}
+
+void UCharacterCreatorSession::SetWeaponSocket(ECharacterCreatorWeaponSlot Slot, FName SocketName)
+{
+    if (SocketName.IsNone())
+    {
+        return;
+    }
+
+    FCharacterCreatorWeaponSetup Setup = AppearanceState.Equipment.GetWeapon(Slot);
+    Setup.SocketName = SocketName;
+    SetWeaponSetup(Slot, Setup);
+}
+
+void UCharacterCreatorSession::RegisterWeaponDefinition(const FCharacterCreatorWeaponSetup& Setup)
+{
+    if (Setup.WeaponId.IsNone())
+    {
+        return;
+    }
+
+    AppearanceState.Equipment.WeaponLibrary.Add(Setup.WeaponId, Setup);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+TArray<FCharacterCreatorWeaponSetup> UCharacterCreatorSession::GetWeaponLibrary() const
+{
+    TArray<FCharacterCreatorWeaponSetup> Result;
+    AppearanceState.Equipment.WeaponLibrary.GenerateValueArray(Result);
+    Result.Sort([](const FCharacterCreatorWeaponSetup& A, const FCharacterCreatorWeaponSetup& B)
+    {
+        return A.WeaponId.ToString() < B.WeaponId.ToString();
+    });
+    return Result;
 }
 
 void UCharacterCreatorSession::SetIKEnabled(ECharacterCreatorIKTarget Target, bool bEnabled)

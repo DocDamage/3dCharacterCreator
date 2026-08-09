@@ -44,6 +44,25 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
     Session->SetClothingAsset(ECharacterCreatorClothingSlot::Legs, FSoftObjectPath(TEXT("/Game/Test/Legs.Legs")));
     TestEqual(TEXT("Clothing slot stores its selected asset"), Session->GetClothingAsset(ECharacterCreatorClothingSlot::Legs), FSoftObjectPath(TEXT("/Game/Test/Legs.Legs")));
 
+    FCharacterCreatorMaterialSlotState MaterialState = Session->GetMaterialSlotState(FName(TEXT("PrimaryOutfit")));
+    MaterialState.Metallic = 2.0f;
+    MaterialState.Roughness = -1.0f;
+    Session->SetMaterialSlotState(FName(TEXT("PrimaryOutfit")), MaterialState);
+    const FCharacterCreatorMaterialSlotState SanitizedMaterial = Session->GetMaterialSlotState(FName(TEXT("PrimaryOutfit")));
+    TestEqual(TEXT("Material metallic values are constrained"), SanitizedMaterial.Metallic, 1.0f);
+    TestEqual(TEXT("Material roughness values are constrained"), SanitizedMaterial.Roughness, 0.0f);
+
+    FCharacterCreatorWeaponSetup WeaponSetup;
+    WeaponSetup.WeaponId = FName(TEXT("TestBlade"));
+    WeaponSetup.DisplayName = FText::FromString(TEXT("Test Blade"));
+    WeaponSetup.AssetPath = FSoftObjectPath(TEXT("/Game/Test/TestBlade.TestBlade"));
+    WeaponSetup.GripScale = FVector::ZeroVector;
+    Session->SetWeaponSetup(ECharacterCreatorWeaponSlot::MainHand, WeaponSetup);
+    const FCharacterCreatorWeaponSetup StoredWeapon = Session->GetWeaponSetup(ECharacterCreatorWeaponSlot::MainHand);
+    TestEqual(TEXT("Weapon socket defaults to a hand socket"), StoredWeapon.SocketName, FName(TEXT("hand_r")));
+    TestTrue(TEXT("Weapon grip scale is sanitized"), StoredWeapon.GripScale.X > 0.0f && StoredWeapon.GripScale.Y > 0.0f && StoredWeapon.GripScale.Z > 0.0f);
+    TestTrue(TEXT("Weapon library contains default entries"), Session->GetWeaponLibrary().Num() >= 2);
+
     const FCharacterPreset Duplicate = Session->CreatePresetFromCurrent(FText::FromString(TEXT("Test Preset")), FText::FromString(TEXT("Automation preset")));
     TestTrue(TEXT("Preset has a valid id"), Duplicate.PresetId.IsValid());
     TestTrue(TEXT("Preset duplicate succeeds"), Session->DuplicatePreset(Duplicate.PresetId));
