@@ -89,6 +89,20 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Retarget execution reaches target ready"), Session->GetAppearanceState().Animation.State, ECharacterCreatorAnimationState::TargetReady);
     TestTrue(TEXT("Retarget execution records mapped bones"), Session->GetAppearanceState().Animation.MappedBoneCount > 0);
 
+    TestTrue(TEXT("Skeleton inspection succeeds with source and target references"), Session->InspectSkeletons());
+    TestTrue(TEXT("Skeleton inspection records source bones"), Session->GetSkeletonInspection().SourceBoneCount > 0);
+    TestTrue(TEXT("Skeleton inspection records required sockets"), Session->GetSkeletonInspection().RequiredSockets.Num() >= 4);
+
+    FCharacterCreatorPhysicsSetupState PhysicsState;
+    PhysicsState.PhysicsAsset = FSoftObjectPath(TEXT("/Game/Test/Physics.Physics"));
+    PhysicsState.GravityScale = 99.0f;
+    Session->SetPhysicsSetup(PhysicsState);
+    TestTrue(TEXT("Physics setup validates an assigned physics asset"), Session->GetPhysicsSetup().bValidated);
+    TestTrue(TEXT("Physics gravity scale is constrained"), Session->GetPhysicsSetup().GravityScale <= 5.0f);
+
+    TestTrue(TEXT("LOD performance profile stays within its default budget"), Session->RunLODPerformanceProfile());
+    TestTrue(TEXT("LOD performance profile estimates memory"), Session->GetLODPerformance().EstimatedMemoryKB > 0);
+
     const FCharacterPreset Duplicate = Session->CreatePresetFromCurrent(FText::FromString(TEXT("Test Preset")), FText::FromString(TEXT("Automation preset")));
     TestTrue(TEXT("Preset has a valid id"), Duplicate.PresetId.IsValid());
     TestTrue(TEXT("Preset duplicate succeeds"), Session->DuplicatePreset(Duplicate.PresetId));

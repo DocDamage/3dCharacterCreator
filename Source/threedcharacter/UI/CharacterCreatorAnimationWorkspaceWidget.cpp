@@ -447,7 +447,7 @@ void UCharacterCreatorAnimationWorkspaceWidget::HandleCommand(FName CommandId)
     }
     if (IsCommand(CommandId, TEXT("inspect_sidekick")))
     {
-        Session->SetStatusMessage(FText::FromString(TEXT("Inspecting target skeleton: SKEL_Default_Sidekick")));
+        Session->InspectSkeletons();
         return;
     }
     if (IsCommand(CommandId, TEXT("inspect_manny")))

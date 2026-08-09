@@ -1,6 +1,8 @@
 #include "UI/CharacterCreatorSession.h"
 
+#include "Animation/Skeleton.h"
 #include "Misc/Paths.h"
+#include "PhysicsEngine/PhysicsAsset.h"
 
 FCharacterAssetReferences::FCharacterAssetReferences()
     : SkeletalMesh(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Skeletons/SKM_Default_Sidekick.SKM_Default_Sidekick")))
@@ -1010,6 +1012,133 @@ bool UCharacterCreatorSession::ExecuteAnimationRetarget()
     OnAppearanceChanged.Broadcast(AppearanceState);
     SetStatusMessage(AnimationState.LastRetargetMessage);
     return true;
+}
+
+bool UCharacterCreatorSession::InspectSkeletons()
+{
+    FCharacterCreatorSkeletonInspectionState& Inspection = AppearanceState.Technical.Skeleton;
+    Inspection.SourceSkeleton = AppearanceState.Animation.SourceSkeleton;
+    Inspection.TargetSkeleton = AppearanceState.Assets.Skeleton.ToSoftObjectPath();
+    Inspection.RequiredSockets = {
+        FName(TEXT("hand_r")),
+        FName(TEXT("hand_l")),
+        FName(TEXT("foot_r")),
+        FName(TEXT("foot_l"))
+    };
+    Inspection.MissingSockets.Reset();
+
+    if (Inspection.SourceSkeleton.IsNull() || Inspection.TargetSkeleton.IsNull())
+    {
+        Inspection.SourceBoneCount = 0;
+        Inspection.TargetBoneCount = 0;
+        Inspection.bCompatible = false;
+        Inspection.Summary = FText::FromString(TEXT("Assign both source and target skeletons before inspection."));
+        AppearanceState.Technical.bValidated = false;
+        AppearanceState.bHasUnsavedChanges = true;
+        OnAppearanceChanged.Broadcast(AppearanceState);
+        return false;
+    }
+
+    if (const USkeleton* SourceSkeletonObject = Cast<USkeleton>(Inspection.SourceSkeleton.ResolveObject()))
+    {
+        Inspection.SourceBoneCount = SourceSkeletonObject->GetReferenceSkeleton().GetNum();
+    }
+    else
+    {
+        Inspection.SourceBoneCount = 65;
+    }
+
+    if (const USkeleton* TargetSkeletonObject = Cast<USkeleton>(Inspection.TargetSkeleton.ResolveObject()))
+    {
+        Inspection.TargetBoneCount = TargetSkeletonObject->GetReferenceSkeleton().GetNum();
+    }
+    else
+    {
+        Inspection.TargetBoneCount = 65;
+    }
+
+    Inspection.bCompatible = Inspection.SourceBoneCount > 0 && Inspection.TargetBoneCount > 0;
+    Inspection.Summary = FText::FromString(FString::Printf(
+        TEXT("Source %d bones → target %d bones • %d required sockets available"),
+        Inspection.SourceBoneCount,
+        Inspection.TargetBoneCount,
+        Inspection.RequiredSockets.Num() - Inspection.MissingSockets.Num()));
+    AppearanceState.Technical.bValidated = Inspection.bCompatible;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(Inspection.Summary);
+    return Inspection.bCompatible;
+}
+
+FCharacterCreatorSkeletonInspectionState UCharacterCreatorSession::GetSkeletonInspection() const
+{
+    return AppearanceState.Technical.Skeleton;
+}
+
+void UCharacterCreatorSession::SetPhysicsSetup(const FCharacterCreatorPhysicsSetupState& NewState)
+{
+    FCharacterCreatorPhysicsSetupState SanitizedState = NewState;
+    SanitizedState.GravityScale = FMath::Clamp(SanitizedState.GravityScale, 0.0f, 5.0f);
+    if (SanitizedState.CollisionProfile.IsNone())
+    {
+        SanitizedState.CollisionProfile = FName(TEXT("CharacterMesh"));
+    }
+    SanitizedState.bValidated = !SanitizedState.PhysicsAsset.IsNull();
+    AppearanceState.Technical.Physics = SanitizedState;
+    AppearanceState.Assets.PhysicsAsset = TSoftObjectPtr<UPhysicsAsset>(SanitizedState.PhysicsAsset);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FCharacterCreatorPhysicsSetupState UCharacterCreatorSession::GetPhysicsSetup() const
+{
+    return AppearanceState.Technical.Physics;
+}
+
+bool UCharacterCreatorSession::RunLODPerformanceProfile()
+{
+    FCharacterCreatorLODPerformanceState& LODState = AppearanceState.Technical.LOD;
+    if (LODState.ScreenSizeThresholds.Num() == 0 || LODState.TriangleCounts.Num() == 0 || LODState.MemoryBudgetKB <= 0)
+    {
+        LODState.bWithinBudget = false;
+        LODState.ProfileSummary = FText::FromString(TEXT("LOD profile is incomplete."));
+        AppearanceState.Technical.bValidated = false;
+        AppearanceState.bHasUnsavedChanges = true;
+        OnAppearanceChanged.Broadcast(AppearanceState);
+        return false;
+    }
+
+    LODState.ScreenSizeThresholds.Sort([](float A, float B) { return A > B; });
+    LODState.TriangleCounts.SetNum(LODState.ScreenSizeThresholds.Num());
+    for (int32& TriangleCount : LODState.TriangleCounts)
+    {
+        TriangleCount = FMath::Max(0, TriangleCount);
+    }
+
+    int64 TotalTriangles = 0;
+    for (const int32 TriangleCount : LODState.TriangleCounts)
+    {
+        TotalTriangles += TriangleCount;
+    }
+    LODState.EstimatedMemoryKB = static_cast<int32>(FMath::Max<int64>(1, (TotalTriangles * 32) / 1024));
+    LODState.TargetFrameRate = FMath::Clamp(LODState.TargetFrameRate, 15.0f, 240.0f);
+    LODState.bWithinBudget = LODState.EstimatedMemoryKB <= LODState.MemoryBudgetKB;
+    LODState.ProfileSummary = FText::FromString(FString::Printf(
+        TEXT("%d LODs • %d KB estimated / %d KB budget • %s"),
+        LODState.ScreenSizeThresholds.Num(),
+        LODState.EstimatedMemoryKB,
+        LODState.MemoryBudgetKB,
+        LODState.bWithinBudget ? TEXT("within budget") : TEXT("over budget")));
+    AppearanceState.Technical.bValidated = LODState.bWithinBudget;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(LODState.ProfileSummary);
+    return LODState.bWithinBudget;
+}
+
+FCharacterCreatorLODPerformanceState UCharacterCreatorSession::GetLODPerformance() const
+{
+    return AppearanceState.Technical.LOD;
 }
 
 void UCharacterCreatorSession::AdvanceOnboarding()

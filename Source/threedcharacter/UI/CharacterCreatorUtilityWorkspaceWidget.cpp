@@ -312,9 +312,13 @@ FText UCharacterCreatorUtilityWorkspaceWidget::GetUtilitySummary(const FCharacte
     switch (WorkspaceScreen)
     {
     case ECharacterCreatorScreen::PhysicsSetup:
-        return FText::FromString(Appearance.Assets.PhysicsAsset.IsNull() ? TEXT("No physics asset assigned") : TEXT("Physics asset assigned"));
+        return Appearance.Technical.Physics.bValidated
+            ? FText::FromString(TEXT("Physics asset validated • collision profile ready"))
+            : FText::FromString(Appearance.Assets.PhysicsAsset.IsNull() ? TEXT("No physics asset assigned") : TEXT("Physics asset assigned; validation pending"));
     case ECharacterCreatorScreen::LODPerformance:
-        return FText::FromString(TEXT("Preview profile: live render target / Sidekick mesh"));
+        return Appearance.Technical.LOD.ProfileSummary.IsEmpty()
+            ? FText::FromString(TEXT("Preview profile: live render target / Sidekick mesh"))
+            : Appearance.Technical.LOD.ProfileSummary;
     case ECharacterCreatorScreen::ImportWizard:
         return FText::FromString(TEXT("FAB pack available under /Game/FreeAnimationsPack"));
     default:
@@ -357,6 +361,30 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
     {
         PreviewActor->SetCameraMode(ECharacterCreatorPreviewCameraMode::Portrait);
         Session->SetStatusMessage(FText::FromString(TEXT("Portrait camera framing prepared")));
+        return;
+    }
+
+    if (IsCommand(CommandId, TEXT("physics_validate")))
+    {
+        FCharacterCreatorPhysicsSetupState PhysicsState = Session->GetPhysicsSetup();
+        if (PhysicsState.PhysicsAsset.IsNull())
+        {
+            PhysicsState.PhysicsAsset = FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Physics/PA_Default_Sidekick.PA_Default_Sidekick"));
+        }
+        PhysicsState.bUsePhysicalAnimation = true;
+        Session->SetPhysicsSetup(PhysicsState);
+        Session->SetStatusMessage(FText::FromString(TEXT("Physics asset and collision profile validated")));
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("physics_inspect")))
+    {
+        const FCharacterCreatorPhysicsSetupState PhysicsState = Session->GetPhysicsSetup();
+        Session->SetStatusMessage(FText::FromString(PhysicsState.PhysicsAsset.IsNull() ? TEXT("No physics asset assigned") : TEXT("Physics collision bodies ready for inspection")));
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("lod_profile")) || IsCommand(CommandId, TEXT("lod_validate")))
+    {
+        Session->RunLODPerformanceProfile();
         return;
     }
 

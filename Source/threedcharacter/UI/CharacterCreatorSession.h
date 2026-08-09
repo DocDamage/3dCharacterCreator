@@ -431,6 +431,108 @@ struct THREEDCHARACTER_API FCharacterCreatorWeaponAnimationProfile
 };
 
 USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorSkeletonInspectionState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FSoftObjectPath SourceSkeleton;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FSoftObjectPath TargetSkeleton;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    int32 SourceBoneCount = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    int32 TargetBoneCount = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    TArray<FName> RequiredSockets;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    TArray<FName> MissingSockets;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    bool bCompatible = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FText Summary;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorPhysicsSetupState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FSoftObjectPath PhysicsAsset;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FName CollisionProfile = TEXT("CharacterMesh");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    float GravityScale = 1.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    bool bSimulatePhysics = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    bool bUsePhysicalAnimation = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    TArray<FName> DisabledBodies;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    bool bValidated = false;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorLODPerformanceState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    TArray<float> ScreenSizeThresholds = { 1.0f, 0.50f, 0.25f, 0.10f };
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    TArray<int32> TriangleCounts = { 30000, 15000, 7000, 2500 };
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    int32 EstimatedMemoryKB = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    int32 MemoryBudgetKB = 65536;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    float TargetFrameRate = 60.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    bool bWithinBudget = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FText ProfileSummary;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorTechnicalToolsState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FCharacterCreatorSkeletonInspectionState Skeleton;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FCharacterCreatorPhysicsSetupState Physics;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FCharacterCreatorLODPerformanceState LOD;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    bool bValidated = false;
+};
+
+USTRUCT(BlueprintType)
 struct THREEDCHARACTER_API FCharacterCreatorFaceAdvancedState
 {
     GENERATED_BODY()
@@ -562,6 +664,9 @@ struct THREEDCHARACTER_API FCharacterAppearanceState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Animation")
     TMap<FName, FCharacterCreatorWeaponAnimationProfile> WeaponAnimationProfiles;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Technical")
+    FCharacterCreatorTechnicalToolsState Technical;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Body")
     float Height = 0.56f;
@@ -835,6 +940,24 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Animation")
     bool ExecuteAnimationRetarget();
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Technical")
+    bool InspectSkeletons();
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Technical")
+    FCharacterCreatorSkeletonInspectionState GetSkeletonInspection() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Technical")
+    void SetPhysicsSetup(const FCharacterCreatorPhysicsSetupState& NewState);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Technical")
+    FCharacterCreatorPhysicsSetupState GetPhysicsSetup() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Technical")
+    bool RunLODPerformanceProfile();
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Technical")
+    FCharacterCreatorLODPerformanceState GetLODPerformance() const;
 
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Onboarding")
     void AdvanceOnboarding();
