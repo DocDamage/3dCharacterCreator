@@ -45,6 +45,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
     bool ValidateImportDirectory(const FString& SourceDirectory, FCharacterCreatorImportProgress& OutProgress);
 
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
+    bool ScanAssetDirectory(const FString& SourceDirectory, const FString& SearchQuery, const FString& CategoryFilter, FCharacterCreatorImportProgress& OutProgress);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
+    bool ImportSelectedAssets(const FCharacterCreatorImportOptions& Options, FCharacterCreatorImportProgress& OutProgress);
+
 private:
     void HandleAppearanceChanged(const FCharacterAppearanceState& NewAppearance);
     void HandleAutosaveTick();

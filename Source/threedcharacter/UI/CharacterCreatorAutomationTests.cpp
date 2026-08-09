@@ -195,6 +195,14 @@ bool FCharacterCreatorImportContractTest::RunTest(const FString& Parameters)
     TestEqual(TEXT("Import validation reaches ready state"), Progress.State, ECharacterCreatorImportState::Ready);
     TestTrue(TEXT("Imported package count is non-zero"), Progress.ValidFiles > 0);
     TestEqual(TEXT("Import validation reaches 100 percent"), Progress.Progress, 1.0f);
+
+    TArray<FCharacterCreatorAssetCatalogEntry> Entries;
+    FCharacterCreatorImportProgress ScanProgress;
+    TestTrue(TEXT("Asset catalog scan succeeds"), FCharacterCreatorImportService::ScanDirectory(ContentPath, TEXT("Manny"), FString(), Entries, ScanProgress));
+    TestTrue(TEXT("Asset catalog scan returns filtered entries"), Entries.Num() > 0);
+    TestTrue(TEXT("Asset catalog records compatibility state"), Entries[0].Compatibility != ECharacterCreatorAssetCompatibility::Unknown);
+    FCharacterCreatorImportOptions InvalidOptions;
+    TestFalse(TEXT("Import requires an explicit destination directory"), FCharacterCreatorImportService::ImportAssets(Entries, InvalidOptions, ScanProgress));
     return true;
 }
 

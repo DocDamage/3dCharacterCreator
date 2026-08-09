@@ -1301,6 +1301,35 @@ void UCharacterCreatorSession::SetImportProgress(const FCharacterCreatorImportPr
     OnImportProgressChanged.Broadcast(ImportProgress);
 }
 
+void UCharacterCreatorSession::SetAssetBrowserState(const FCharacterCreatorAssetBrowserState& NewState)
+{
+    AppearanceState.AssetBrowser = NewState;
+    AppearanceState.AssetBrowser.FilteredCount = AppearanceState.AssetBrowser.Entries.Num();
+    AppearanceState.AssetBrowser.bCanImport = AppearanceState.AssetBrowser.Entries.ContainsByPredicate([](const FCharacterCreatorAssetCatalogEntry& Entry)
+    {
+        return Entry.bSelected && Entry.Compatibility != ECharacterCreatorAssetCompatibility::Incompatible;
+    });
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SelectBrowserAsset(const FString& AssetPath)
+{
+    if (AssetPath.IsEmpty())
+    {
+        return;
+    }
+
+    AppearanceState.AssetBrowser.SelectedAsset = AssetPath;
+    for (FCharacterCreatorAssetCatalogEntry& Entry : AppearanceState.AssetBrowser.Entries)
+    {
+        Entry.bSelected = Entry.SourceFile == AssetPath;
+    }
+    AppearanceState.AssetBrowser.bCanImport = true;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
 void UCharacterCreatorSession::Shutdown()
 {
     OnScreenChanged.Clear();

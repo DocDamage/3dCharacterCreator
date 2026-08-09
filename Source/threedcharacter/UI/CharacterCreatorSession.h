@@ -779,6 +779,9 @@ struct THREEDCHARACTER_API FCharacterAppearanceState
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preview")
     FCharacterCreatorPreviewTestingState PreviewTesting;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    FCharacterCreatorAssetBrowserState AssetBrowser;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Body")
     float Height = 0.56f;
 
@@ -1128,6 +1131,15 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Character Creator|Import")
     FCharacterCreatorImportProgress GetImportProgress() const { return ImportProgress; }
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
+    void SetAssetBrowserState(const FCharacterCreatorAssetBrowserState& NewState);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Import")
+    FCharacterCreatorAssetBrowserState GetAssetBrowserState() const { return AppearanceState.AssetBrowser; }
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
+    void SelectBrowserAsset(const FString& AssetPath);
 
     void Shutdown();
 

@@ -327,6 +327,8 @@ FText UCharacterCreatorUtilityWorkspaceWidget::GetUtilitySummary(const FCharacte
         return Appearance.PreviewTesting.Portrait.bCaptureReady
             ? FText::FromString(FString::Printf(TEXT("Portrait ready • %dx%d %s"), Appearance.PreviewTesting.Portrait.Width, Appearance.PreviewTesting.Portrait.Height, *Appearance.PreviewTesting.Portrait.Format.ToString()))
             : FText::FromString(TEXT("Portrait capture not prepared"));
+    case ECharacterCreatorScreen::AssetBrowser:
+        return FText::FromString(FString::Printf(TEXT("%d assets visible • %s"), Appearance.AssetBrowser.FilteredCount, Appearance.AssetBrowser.bCanImport ? TEXT("import ready") : TEXT("no compatible selection")));
     case ECharacterCreatorScreen::ImportWizard:
         return FText::FromString(TEXT("FAB pack available under /Game/FreeAnimationsPack"));
     default:
@@ -421,6 +423,19 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
         {
             FCharacterCreatorImportProgress Progress;
             Subsystem->ValidateImportDirectory(FPaths::Combine(FPaths::ProjectContentDir(), TEXT("FreeAnimationsPack")), Progress);
+            return;
+        }
+    }
+
+    if (IsCommand(CommandId, TEXT("assets_refresh_sidekick")) || IsCommand(CommandId, TEXT("assets_refresh_fab")))
+    {
+        if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+        {
+            const FString Directory = IsCommand(CommandId, TEXT("assets_refresh_fab"))
+                ? FPaths::Combine(FPaths::ProjectContentDir(), TEXT("FreeAnimationsPack"))
+                : FPaths::Combine(FPaths::ProjectContentDir(), TEXT("Synty"), TEXT("SidekickCharacters"));
+            FCharacterCreatorImportProgress Progress;
+            Subsystem->ScanAssetDirectory(Directory, FString(), FString(), Progress);
             return;
         }
     }

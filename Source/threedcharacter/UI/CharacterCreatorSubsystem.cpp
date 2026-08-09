@@ -189,6 +189,45 @@ bool UCharacterCreatorSubsystem::ValidateImportDirectory(const FString& SourceDi
     return bValid;
 }
 
+bool UCharacterCreatorSubsystem::ScanAssetDirectory(const FString& SourceDirectory, const FString& SearchQuery, const FString& CategoryFilter, FCharacterCreatorImportProgress& OutProgress)
+{
+    if (!Session)
+    {
+        return false;
+    }
+
+    TArray<FCharacterCreatorAssetCatalogEntry> Entries;
+    const bool bValid = FCharacterCreatorImportService::ScanDirectory(SourceDirectory, SearchQuery, CategoryFilter, Entries, OutProgress);
+    FCharacterCreatorAssetBrowserState BrowserState = Session->GetAssetBrowserState();
+    BrowserState.Entries = Entries;
+    BrowserState.SearchQuery = SearchQuery;
+    BrowserState.CategoryFilter = CategoryFilter;
+    BrowserState.FilteredCount = Entries.Num();
+    BrowserState.bCanImport = Entries.ContainsByPredicate([](const FCharacterCreatorAssetCatalogEntry& Entry)
+    {
+        return Entry.bSelected && Entry.Compatibility != ECharacterCreatorAssetCompatibility::Incompatible;
+    });
+    BrowserState.LastScanMessage = OutProgress.Message;
+    Session->SetAssetBrowserState(BrowserState);
+    Session->SetImportProgress(OutProgress);
+    Session->SetStatusMessage(OutProgress.Message);
+    return bValid;
+}
+
+bool UCharacterCreatorSubsystem::ImportSelectedAssets(const FCharacterCreatorImportOptions& Options, FCharacterCreatorImportProgress& OutProgress)
+{
+    if (!Session)
+    {
+        return false;
+    }
+
+    const FCharacterCreatorAssetBrowserState BrowserState = Session->GetAssetBrowserState();
+    const bool bImported = FCharacterCreatorImportService::ImportAssets(BrowserState.Entries, Options, OutProgress);
+    Session->SetImportProgress(OutProgress);
+    Session->SetStatusMessage(OutProgress.Message);
+    return bImported;
+}
+
 void UCharacterCreatorSubsystem::HandleAppearanceChanged(const FCharacterAppearanceState& NewAppearance)
 {
     bAutosavePending = NewAppearance.bHasUnsavedChanges;
