@@ -20,13 +20,13 @@
 >
 > **Present as foundation or scaffold:** most named workspaces are routed C++ screens with reusable panels, labels, command buttons, and status summaries. Their domain operations are not yet implemented: Blend Space/Animation Blueprint/montage generation, retarget execution, socket and rig editing, physics simulation, gameplay movement/combat, LOD metrics, asset browsing/import, randomization, settings persistence, portrait capture, and Unreal package/Blueprint/Data Asset export.
 >
-> **P00–P03 evidence present:** Penpot MCP acceptance evidence is recorded in `docs/penpot/P00_PENPOT_MCP_ACCEPTANCE.md`; the 39-screen audit is in the three P01 reports; P02 architecture/flow is in `docs/penpot/P02_PRODUCT_ARCHITECTURE_AND_FLOW_MAP.md`; and P03 foundations are in `docs/penpot/P03_PENPOT_FOUNDATIONS.md`. The connected editable file is `New File 1`; P04 component contracts, visual comparison evidence, a complete gamepad focus graph, and the Unreal authoring/export pipeline remain outstanding. The reference directory contains 39 individual screens plus 2 contact sheets; no ZIP was found.
+> **P00–P04 evidence present:** Penpot MCP acceptance evidence is recorded in `docs/penpot/P00_PENPOT_MCP_ACCEPTANCE.md`; the 39-screen audit is in the three P01 reports; P02 architecture/flow is in `docs/penpot/P02_PRODUCT_ARCHITECTURE_AND_FLOW_MAP.md`; P03 foundations are in `docs/penpot/P03_PENPOT_FOUNDATIONS.md`; and P04 components are in `docs/penpot/P04_PENPOT_COMPONENT_INVENTORY.md`. The connected editable file is `New File 1`; visual comparison evidence, a complete gamepad focus graph, and the Unreal authoring/export pipeline remain outstanding. The reference directory contains 39 individual screens plus 2 contact sheets; no ZIP was found.
 >
 > **Verification snapshot:** `Build.bat threedcharacterEditor Win64 Development` succeeded; headless `Automation RunTests CharacterCreator` found and passed 4 tests: `CharacterCreator.Export.Contract`, `CharacterCreator.Import.FreeAnimationsPack`, `CharacterCreator.Session.Foundation`, and `CharacterCreator.UIAndSave.Contract`. These tests verify contracts and content validation, not visual completeness or full Unreal authoring behavior.
 
 ## Current implementation position
 
-The project is at the transition from foundation work to functional workspace implementation. P00–P03 are complete with recorded Penpot acceptance, reference-audit, architecture, flow-map, and foundation evidence; P04 is next. In parallel, the C++ runtime has already reached early P05–P17 coverage as a deliberately unified module. Treat every routed workspace as **implemented foundation** until its domain behavior, visual fidelity, input states, and verification evidence are completed.
+The project is at the transition from foundation work to functional workspace implementation. P00–P04 are complete with recorded Penpot acceptance, reference-audit, architecture, flow-map, foundation, and component evidence. In parallel, the C++ runtime has already reached early P05–P17 coverage as a deliberately unified module. Treat every routed workspace as **implemented foundation** until its domain behavior, visual fidelity, input states, and verification evidence are completed.
 
 ### Current evidence map
 
@@ -2134,7 +2134,7 @@ Exit criteria:
 
 ## P04 — Components
 
-**Current status: Partial.** Reusable C++ UMG primitives exist for panels, buttons, command buttons, sliders, tabs, modal shells, and modal focus management. The Penpot component inventory and explicit state variants are in progress for P04.
+**Current status: Complete for the design phase.** Penpot has 20 reusable component assets, five linked component instances in a usage proof, and explicit focus/disabled/error/info states. The Unreal counterparts and remaining future variants are documented in `docs/penpot/P04_PENPOT_COMPONENT_INVENTORY.md`.
 
 Tasks:
 
@@ -2434,7 +2434,7 @@ Exit criteria:
 
 ## P19 — Completion Evidence
 
-**Current status: Partial.** P00–P03 evidence documents now exist under `docs/penpot/`. The P04 component inventory, visual comparison evidence, Unreal handoff detail, and completion-evidence packaging remain to be created.
+**Current status: Partial.** P00–P04 evidence documents now exist under `docs/penpot/`. Visual comparison evidence, Unreal handoff detail, and completion-evidence packaging remain to be created.
 
 Tasks:
 
@@ -2499,7 +2499,7 @@ A screen is complete only when all applicable items pass:
 
 # 63. Overall Acceptance Criteria
 
-**Current status: Not achieved.** The repository has 39/39 individual references audited, 39 native Penpot screen boards structurally scanned, 21/21 declared runtime screens routable, 4/4 current automation tests passing, and a verified UE 5.7 editor build. It has 1 verified Penpot MCP acceptance run and 6 P00–P03 evidence documents, while P04 component documents, visual comparison evidence, a complete gamepad focus graph, and the Unreal authoring/export pipeline remain incomplete. The criteria below remain the definition of done, not a claim that the current slice satisfies them.
+**Current status: Not achieved.** The repository has 39/39 individual references audited, 39 native Penpot screen boards structurally scanned, 21/21 declared runtime screens routable, 4/4 current automation tests passing, and a verified UE 5.7 editor build. It has 1 verified Penpot MCP acceptance run and 7 P00–P04 evidence documents, while visual comparison evidence, a complete gamepad focus graph, and the Unreal authoring/export pipeline remain incomplete. The criteria below remain the definition of done, not a claim that the current slice satisfies them.
 
 The project design phase is not complete until:
 
@@ -2550,9 +2550,8 @@ The original “start with P00” recommendation is still valid as a prerequisit
 
 ## Immediate sequence
 
-1. **P04 — Components:** create the reusable component inventory, state variants, and Unreal handoff contract in Penpot.
-2. **P08 — Animation functional slice:** implement one complete source-to-Sidekick retarget path, then use that path to validate locomotion, Blend Space, Animation Blueprint, and preview behavior before expanding the authoring surface.
-3. **P14 — Validation and export:** extend the current JSON manifest foundation into real Unreal deliverables only after the animation and asset contracts are real.
+1. **P08 — Animation functional slice:** implement one complete source-to-Sidekick retarget path, then use that path to validate locomotion, Blend Space, Animation Blueprint, and preview behavior before expanding the authoring surface.
+2. **P14 — Validation and export:** extend the current JSON manifest foundation into real Unreal deliverables only after the animation and asset contracts are real.
 
 ## Required next handoff
 
