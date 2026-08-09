@@ -9,7 +9,20 @@ enum class ECharacterCreatorImportState : uint8
     Idle,
     Validating,
     Ready,
+    Importing,
+    Completed,
+    CompletedWithErrors,
+    Cancelled,
     Failed
+};
+
+UENUM(BlueprintType)
+enum class ECharacterCreatorFileOperationOutcome : uint8
+{
+    Imported,
+    Skipped,
+    Failed,
+    Cancelled
 };
 
 UENUM(BlueprintType)
@@ -51,6 +64,12 @@ struct THREEDCHARACTER_API FCharacterCreatorAssetCatalogEntry
     FString Extension;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    FString ObjectPath;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    FString AssetClass;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
     int64 FileSize = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
@@ -60,10 +79,37 @@ struct THREEDCHARACTER_API FCharacterCreatorAssetCatalogEntry
     TArray<FText> DependencyWarnings;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    TArray<FString> Dependencies;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    TArray<FString> MissingDependencies;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
     bool bSelected = true;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
     bool bConflict = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    bool bFavorite = false;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorFileOperationResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    FString SourceFile;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    FString DestinationFile;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    ECharacterCreatorFileOperationOutcome Outcome = ECharacterCreatorFileOperationOutcome::Failed;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    FText Message;
 };
 
 USTRUCT(BlueprintType)
@@ -108,6 +154,12 @@ struct THREEDCHARACTER_API FCharacterCreatorAssetBrowserState
     bool bCanImport = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    bool bFavoritesOnly = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    ECharacterCreatorImportConflictResolution ConflictResolution = ECharacterCreatorImportConflictResolution::Skip;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
     FText LastScanMessage;
 };
 
@@ -141,6 +193,21 @@ struct THREEDCHARACTER_API FCharacterCreatorImportProgress
     int32 DependencyWarnings = 0;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    int32 ProcessedFiles = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    int32 SkippedFiles = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    int32 FailedFiles = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    FString CurrentFile;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    TArray<FCharacterCreatorFileOperationResult> FileResults;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
     float Progress = 0.0f;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
@@ -149,8 +216,13 @@ struct THREEDCHARACTER_API FCharacterCreatorImportProgress
 
 struct THREEDCHARACTER_API FCharacterCreatorImportService
 {
+    using FProgressCallback = TFunction<void(const FCharacterCreatorImportProgress&)>;
+    using FShouldCancel = TFunction<bool()>;
+
     static bool ValidateDirectory(const FString& SourceDirectory, FCharacterCreatorImportProgress& OutProgress);
     static bool ScanDirectory(const FString& SourceDirectory, const FString& SearchQuery, const FString& CategoryFilter, TArray<FCharacterCreatorAssetCatalogEntry>& OutEntries, FCharacterCreatorImportProgress& OutProgress);
+    static bool ScanMountedPath(const FString& PackageRoot, const FString& SearchQuery, const FString& CategoryFilter, TArray<FCharacterCreatorAssetCatalogEntry>& OutEntries, FCharacterCreatorImportProgress& OutProgress);
     static ECharacterCreatorAssetCompatibility AnalyzeCompatibility(const FString& FilePath, TArray<FText>& OutWarnings);
     static bool ImportAssets(const TArray<FCharacterCreatorAssetCatalogEntry>& Entries, const FCharacterCreatorImportOptions& Options, FCharacterCreatorImportProgress& OutProgress);
+    static bool ImportAssets(const TArray<FCharacterCreatorAssetCatalogEntry>& Entries, const FCharacterCreatorImportOptions& Options, FCharacterCreatorImportProgress& OutProgress, const FProgressCallback& ProgressCallback, const FShouldCancel& ShouldCancel);
 };

@@ -15,6 +15,9 @@
 #include "UI/CharacterCreatorSession.h"
 #include "UI/CharacterCreatorSaveGame.h"
 #include "UI/CharacterCreatorUIFramework.h"
+#include "UI/CharacterCreatorUtilityWorkspaceWidget.h"
+#include "UI/CharacterCreatorSubsystem.h"
+#include "Engine/GameInstance.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FCharacterCreatorSessionFoundationTest,
@@ -375,6 +378,209 @@ bool FCharacterCreatorUIAndSaveContractTest::RunTest(const FString& Parameters)
     TestFalse(TEXT("Future save versions are rejected"), SaveGame->IsCompatible());
     SaveGame->SaveVersion = 0;
     TestFalse(TEXT("Zero save versions are rejected"), SaveGame->IsCompatible());
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FCharacterCreatorProjectLifecycleE2ETest,
+    "CharacterCreator.ProjectLifecycle.E2E",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCharacterCreatorProjectLifecycleE2ETest::RunTest(const FString& Parameters)
+{
+    UGameInstance* GameInstance = NewObject<UGameInstance>(GetTransientPackage());
+    TestNotNull(TEXT("Lifecycle game instance is constructible"), GameInstance);
+    if (!GameInstance) return false;
+    GameInstance->AddToRoot();
+    GameInstance->Init();
+    UCharacterCreatorSubsystem* Subsystem = GameInstance->GetSubsystem<UCharacterCreatorSubsystem>();
+    TestNotNull(TEXT("Character creator subsystem initializes through a real game instance"), Subsystem);
+    if (!Subsystem)
+    {
+        GameInstance->Shutdown();
+        GameInstance->RemoveFromRoot();
+        return false;
+    }
+
+    UCharacterCreatorSession* Session = Subsystem->GetSession();
+    TestNotNull(TEXT("Lifecycle subsystem owns a session"), Session);
+    const FCharacterCreatorSettings OriginalSettings = Session->GetSettings();
+    for (const FCharacterCreatorProjectRecord& ExistingProject : Session->GetProjectBrowserState().Projects)
+    {
+        if (ExistingProject.DisplayName.ToString().StartsWith(TEXT("Automation Lifecycle")))
+        {
+            Subsystem->DeleteProject(ExistingProject.SlotName);
+        }
+    }
+    const FString UniqueName = FString::Printf(TEXT("Automation Lifecycle %s"), *FGuid::NewGuid().ToString(EGuidFormats::Digits).Left(8));
+    FCharacterCreatorSettings Settings = Session->GetSettings();
+    Settings.bCreateBackups = true;
+    Settings.MaxBackupCount = 2;
+    Session->SetSettings(Settings);
+    Session->SetParameterValue(ECharacterCreatorParameter::Height, 0.61f);
+    TestTrue(TEXT("Save As creates a named project"), Subsystem->SaveCurrentProjectAs(UniqueName));
+    const FString OriginalSlot = Session->GetProjectBrowserState().ActiveSlotName;
+    TestTrue(TEXT("Named project has a stable slot"), !OriginalSlot.IsEmpty() && Subsystem->DoesSaveExist(OriginalSlot));
+
+    for (int32 Index = 0; Index < 4; ++Index)
+    {
+        Session->SetParameterValue(ECharacterCreatorParameter::Height, 0.62f + static_cast<float>(Index) * 0.01f);
+        TestTrue(TEXT("Repeated manual save succeeds"), Subsystem->SaveCurrentProject());
+    }
+    const FCharacterCreatorProjectRecord* OriginalRecord = Session->GetProjectBrowserState().Projects.FindByPredicate([&OriginalSlot](const FCharacterCreatorProjectRecord& Item) { return Item.SlotName == OriginalSlot; });
+    TestTrue(TEXT("Backup retention is bounded"), OriginalRecord && OriginalRecord->BackupCount <= 2);
+
+    const FString CopyName = UniqueName + TEXT(" Copy");
+    TestTrue(TEXT("Project duplicate succeeds"), Subsystem->DuplicateProject(OriginalSlot, CopyName));
+    const FCharacterCreatorProjectBrowserState BrowserAfterDuplicate = Session->GetProjectBrowserState();
+    const FCharacterCreatorProjectRecord* CopyRecord = BrowserAfterDuplicate.Projects.FindByPredicate([&CopyName](const FCharacterCreatorProjectRecord& Item) { return Item.DisplayName.ToString() == CopyName; });
+    TestNotNull(TEXT("Duplicate is independently catalogued"), CopyRecord);
+    const FString CopySlot = CopyRecord ? CopyRecord->SlotName : FString();
+    TestTrue(TEXT("Project rename succeeds"), Subsystem->RenameProject(CopySlot, CopyName + TEXT(" Renamed")));
+
+    Session->SetParameterValue(ECharacterCreatorParameter::Height, 0.77f);
+    TestFalse(TEXT("Switching projects with dirty state requires confirmation"), Subsystem->SelectProject(CopySlot));
+    TestTrue(TEXT("Unsaved confirmation flag is exposed to UMG"), Session->GetProjectBrowserState().bUnsavedConfirmationRequired);
+    TestTrue(TEXT("Cancelling a pending project change succeeds"), Subsystem->ResolvePendingProjectChange(ECharacterCreatorUnsavedDecision::Cancel));
+    TestTrue(TEXT("Dirty state remains after cancellation"), Session->HasUnsavedChanges());
+    TestFalse(TEXT("Second dirty switch still requests confirmation"), Subsystem->SelectProject(CopySlot));
+    TestTrue(TEXT("Discard decision completes the pending switch"), Subsystem->ResolvePendingProjectChange(ECharacterCreatorUnsavedDecision::Discard));
+    TestEqual(TEXT("Duplicate becomes active after confirmed switch"), Session->GetProjectBrowserState().ActiveSlotName, CopySlot);
+
+    Session->SetParameterValue(ECharacterCreatorParameter::Height, 0.79f);
+    TestTrue(TEXT("Per-project autosave writes a recovery snapshot"), Subsystem->SaveAutosave());
+    TestTrue(TEXT("Autosave recovery is advertised"), Session->GetProjectBrowserState().bAutosaveRecoveryAvailable);
+    TestTrue(TEXT("Autosave recovery restores the snapshot"), Subsystem->RecoverAutosave());
+    TestTrue(TEXT("Recovered data remains dirty until manually saved"), Session->HasUnsavedChanges());
+
+    TestTrue(TEXT("Duplicate deletion succeeds"), Subsystem->DeleteProject(CopySlot));
+    TestTrue(TEXT("Original project deletion succeeds"), Subsystem->DeleteProject(OriginalSlot));
+    Session->SetSettings(OriginalSettings);
+    GameInstance->Shutdown();
+    GameInstance->RemoveFromRoot();
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FCharacterCreatorImportHardeningTest,
+    "CharacterCreator.Import.PartialAndCancellation",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCharacterCreatorImportHardeningTest::RunTest(const FString& Parameters)
+{
+    const FString Root = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Automation"), FGuid::NewGuid().ToString(EGuidFormats::Digits));
+    const FString Source = FPaths::Combine(Root, TEXT("Source"));
+    const FString Destination = FPaths::Combine(Root, TEXT("Destination"));
+    IFileManager::Get().MakeDirectory(*Source, true);
+    const FString SourceFile = FPaths::Combine(Source, TEXT("ValidAsset.uasset"));
+    TestTrue(TEXT("Import fixture is written"), FFileHelper::SaveStringToFile(TEXT("automation-package"), *SourceFile));
+
+    FCharacterCreatorAssetCatalogEntry ValidEntry;
+    ValidEntry.SourceFile = SourceFile;
+    ValidEntry.RelativePath = TEXT("Folder/ValidAsset.uasset");
+    ValidEntry.AssetName = TEXT("ValidAsset");
+    ValidEntry.FileSize = IFileManager::Get().FileSize(*SourceFile);
+    ValidEntry.Compatibility = ECharacterCreatorAssetCompatibility::Compatible;
+    ValidEntry.bSelected = true;
+    FCharacterCreatorAssetCatalogEntry InvalidEntry = ValidEntry;
+    InvalidEntry.AssetName = TEXT("InvalidAsset");
+    InvalidEntry.RelativePath = TEXT("Folder/InvalidAsset.uasset");
+    InvalidEntry.Compatibility = ECharacterCreatorAssetCompatibility::Incompatible;
+
+    FCharacterCreatorImportOptions Options;
+    Options.DestinationContentDirectory = Destination;
+    FCharacterCreatorImportProgress PartialProgress;
+    TestFalse(TEXT("Partial import reports an overall non-success"), FCharacterCreatorImportService::ImportAssets({ ValidEntry, InvalidEntry }, Options, PartialProgress));
+    TestEqual(TEXT("Partial import state is explicit"), PartialProgress.State, ECharacterCreatorImportState::CompletedWithErrors);
+    TestEqual(TEXT("One package is verified imported"), PartialProgress.ValidFiles, 1);
+    TestEqual(TEXT("One package is reported failed"), PartialProgress.FailedFiles, 1);
+    TestEqual(TEXT("Per-file results cover every selected package"), PartialProgress.FileResults.Num(), 2);
+
+    FCharacterCreatorImportProgress CancelProgress;
+    TestFalse(TEXT("Cancellation returns non-success"), FCharacterCreatorImportService::ImportAssets({ ValidEntry }, Options, CancelProgress, FCharacterCreatorImportService::FProgressCallback(), []() { return true; }));
+    TestEqual(TEXT("Cancelled import has a distinct state"), CancelProgress.State, ECharacterCreatorImportState::Cancelled);
+    TestEqual(TEXT("Cancelled file has a recorded outcome"), CancelProgress.FileResults[0].Outcome, ECharacterCreatorFileOperationOutcome::Cancelled);
+
+    FCharacterCreatorAssetCatalogEntry EscapeEntry = ValidEntry;
+    EscapeEntry.RelativePath = TEXT("../Escaped.uasset");
+    FCharacterCreatorImportProgress EscapeProgress;
+    TestFalse(TEXT("Import rejects relative paths that escape the selected destination"), FCharacterCreatorImportService::ImportAssets({ EscapeEntry }, Options, EscapeProgress));
+    TestEqual(TEXT("Unsafe path is reported as a failed file"), EscapeProgress.FailedFiles, 1);
+    TestFalse(TEXT("Unsafe path never writes outside the destination"), IFileManager::Get().FileExists(*FPaths::Combine(Root, TEXT("Escaped.uasset"))));
+    IFileManager::Get().DeleteDirectory(*Root, false, true);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FCharacterCreatorActualUMGFlowsTest,
+    "CharacterCreator.UMG.ActualFlows",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCharacterCreatorActualUMGFlowsTest::RunTest(const FString& Parameters)
+{
+    UCharacterCreatorSession* Session = NewObject<UCharacterCreatorSession>(GetTransientPackage());
+    Session->InitializeDefaults();
+    FCharacterCreatorAssetBrowserState Browser;
+    FCharacterCreatorAssetCatalogEntry Entry;
+    Entry.SourceFile = TEXT("Automation/Asset.uasset");
+    Entry.AssetName = TEXT("Automation Asset");
+    Entry.AssetClass = TEXT("SkeletalMesh");
+    Entry.Compatibility = ECharacterCreatorAssetCompatibility::Compatible;
+    Entry.bSelected = false;
+    Browser.Entries.Add(Entry);
+    Session->SetAssetBrowserState(Browser);
+
+    UCharacterCreatorUtilityWorkspaceWidget* AssetWidget = NewObject<UCharacterCreatorUtilityWorkspaceWidget>(GetTransientPackage());
+    TestTrue(TEXT("Asset UMG widget initializes"), AssetWidget->Initialize());
+    AssetWidget->SetWorkspaceScreen(ECharacterCreatorScreen::AssetBrowser);
+    AssetWidget->InitializeWithSession(Session);
+    TestTrue(TEXT("Asset UMG widget builds its real widget tree"), AssetWidget->BuildForAutomation());
+    TestTrue(TEXT("Data-driven asset selection button exists"), AssetWidget->HasCommandForAutomation(FName(TEXT("asset_select_0"))));
+    TestTrue(TEXT("Data-driven favorite button exists"), AssetWidget->HasCommandForAutomation(FName(TEXT("asset_favorite_0"))));
+    TestTrue(TEXT("Favorite command dispatches through the UMG button delegate"), AssetWidget->ExecuteCommandForAutomation(FName(TEXT("asset_favorite_0"))));
+    TestTrue(TEXT("Favorite state reaches the authoritative session"), Session->GetAssetBrowserState().Entries[0].bFavorite);
+    TestTrue(TEXT("Selection command dispatches through the UMG button delegate"), AssetWidget->ExecuteCommandForAutomation(FName(TEXT("asset_select_0"))));
+    TestTrue(TEXT("Selection state reaches the authoritative session"), Session->GetAssetBrowserState().Entries[0].bSelected);
+
+    UCharacterCreatorUtilityWorkspaceWidget* GameplayWidget = NewObject<UCharacterCreatorUtilityWorkspaceWidget>(GetTransientPackage());
+    TestTrue(TEXT("Gameplay UMG widget initializes"), GameplayWidget->Initialize());
+    GameplayWidget->SetWorkspaceScreen(ECharacterCreatorScreen::GameplayTest);
+    GameplayWidget->InitializeWithSession(Session);
+    TestTrue(TEXT("Gameplay UMG widget builds its real widget tree"), GameplayWidget->BuildForAutomation());
+    TestTrue(TEXT("UMG start command executes"), GameplayWidget->ExecuteCommandForAutomation(FName(TEXT("gameplay_start"))));
+    TestEqual(TEXT("UMG start command reaches running state"), Session->GetGameplayTestState().State, ECharacterCreatorGameplayTestState::Running);
+    TestTrue(TEXT("UMG complete command executes"), GameplayWidget->ExecuteCommandForAutomation(FName(TEXT("gameplay_stop"))));
+    TestEqual(TEXT("UMG complete command reaches passed state"), Session->GetGameplayTestState().State, ECharacterCreatorGameplayTestState::Passed);
+
+    UCharacterCreatorUtilityWorkspaceWidget* ProjectWidget = NewObject<UCharacterCreatorUtilityWorkspaceWidget>(GetTransientPackage());
+    TestTrue(TEXT("Project UMG widget initializes"), ProjectWidget->Initialize());
+    ProjectWidget->SetWorkspaceScreen(ECharacterCreatorScreen::ProjectBrowser);
+    ProjectWidget->InitializeWithSession(Session);
+    TestTrue(TEXT("Project UMG widget builds its real widget tree"), ProjectWidget->BuildForAutomation());
+    TestTrue(TEXT("Project Save As action is present in actual UMG"), ProjectWidget->HasCommandForAutomation(FName(TEXT("project_save_as"))));
+    TestTrue(TEXT("Project rename action is present in actual UMG"), ProjectWidget->HasCommandForAutomation(FName(TEXT("project_rename"))));
+    TestTrue(TEXT("Project duplicate action is present in actual UMG"), ProjectWidget->HasCommandForAutomation(FName(TEXT("project_duplicate"))));
+    TestTrue(TEXT("Project delete action is present in actual UMG"), ProjectWidget->HasCommandForAutomation(FName(TEXT("project_delete"))));
+
+    UCharacterCreatorUtilityWorkspaceWidget* ImportWidget = NewObject<UCharacterCreatorUtilityWorkspaceWidget>(GetTransientPackage());
+    TestTrue(TEXT("Import UMG widget initializes"), ImportWidget->Initialize());
+    ImportWidget->SetWorkspaceScreen(ECharacterCreatorScreen::ImportWizard);
+    ImportWidget->InitializeWithSession(Session);
+    TestTrue(TEXT("Import UMG widget builds its real widget tree"), ImportWidget->BuildForAutomation());
+    TestTrue(TEXT("Import execution action is present in actual UMG"), ImportWidget->HasCommandForAutomation(FName(TEXT("import_execute"))));
+    TestTrue(TEXT("Import cancellation action is present in actual UMG"), ImportWidget->HasCommandForAutomation(FName(TEXT("import_cancel"))));
+    TestTrue(TEXT("Import source selection is present in actual UMG"), ImportWidget->HasCommandForAutomation(FName(TEXT("import_source"))));
+    TestTrue(TEXT("Import destination selection is present in actual UMG"), ImportWidget->HasCommandForAutomation(FName(TEXT("import_destination"))));
+
+    UCharacterCreatorUtilityWorkspaceWidget* ExportWidget = NewObject<UCharacterCreatorUtilityWorkspaceWidget>(GetTransientPackage());
+    TestTrue(TEXT("Export UMG widget initializes"), ExportWidget->Initialize());
+    ExportWidget->SetWorkspaceScreen(ECharacterCreatorScreen::ValidationExport);
+    ExportWidget->InitializeWithSession(Session);
+    TestTrue(TEXT("Export UMG widget builds its real widget tree"), ExportWidget->BuildForAutomation());
+    TestTrue(TEXT("Export full-package action is present in actual UMG"), ExportWidget->HasCommandForAutomation(FName(TEXT("export_full_package"))));
+    TestTrue(TEXT("Export cancellation action is present in actual UMG"), ExportWidget->HasCommandForAutomation(FName(TEXT("export_cancel"))));
+    TestTrue(TEXT("Export destination selection is present in actual UMG"), ExportWidget->HasCommandForAutomation(FName(TEXT("export_destination"))));
+    TestTrue(TEXT("Open output folder action is present in actual UMG"), ExportWidget->HasCommandForAutomation(FName(TEXT("export_open_folder"))));
     return true;
 }
 

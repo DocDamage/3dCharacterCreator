@@ -7,6 +7,8 @@ Saved/
 # IDE and local tooling
 .vs/
 .vscode/
+__pycache__/
+*.py[cod]
 *.sln
 *.suo
 *.opensdf

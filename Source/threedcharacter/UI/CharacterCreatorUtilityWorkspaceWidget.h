@@ -13,6 +13,8 @@ class UCharacterCreatorCommandButtonWidget;
 class ACharacterCreatorPreviewActor;
 enum class ECharacterCreatorPreviewState : uint8;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorUtilityModalRequested, FName);
+
 UCLASS()
 class THREEDCHARACTER_API UCharacterCreatorUtilityWorkspaceWidget : public UUserWidget
 {
@@ -23,6 +25,14 @@ public:
     void InitializeWithPreviewActor(ACharacterCreatorPreviewActor* InPreviewActor);
     void SetWorkspaceScreen(ECharacterCreatorScreen InScreen);
     void FocusFirstControl();
+
+    FOnCharacterCreatorUtilityModalRequested OnModalRequested;
+
+#if WITH_DEV_AUTOMATION_TESTS
+    bool BuildForAutomation();
+    bool ExecuteCommandForAutomation(FName CommandId);
+    bool HasCommandForAutomation(FName CommandId) const;
+#endif
 
 protected:
     virtual void NativeConstruct() override;
@@ -35,6 +45,7 @@ private:
     void BuildInspector(UCanvasPanel* Canvas);
     UCharacterCreatorCommandButtonWidget* AddCommandButton(UCanvasPanel* Canvas, const FString& Label, FName CommandId, const FVector2D& Position, const FVector2D& Size, ECharacterCreatorButtonStyle Style);
     void ApplyAppearance(const FCharacterAppearanceState& NewAppearance);
+    void ApplyProjectBrowser(const FCharacterCreatorProjectBrowserState& NewState);
     void ApplyStatus(const FText& NewStatus);
     void ApplyPreviewRenderTarget();
     void ApplyPreviewState(ECharacterCreatorPreviewState NewState, const FText& Message);
@@ -69,4 +80,5 @@ private:
 
     ECharacterCreatorScreen WorkspaceScreen = ECharacterCreatorScreen::PreviewStudio;
     bool bLayoutBuilt = false;
+    FString AssetLayoutSignature;
 };

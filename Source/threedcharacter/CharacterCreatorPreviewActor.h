@@ -59,6 +59,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Preview")
     void SetCameraOrbit(float Yaw, float Pitch, float Zoom = 1.0f);
 
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Preview")
+    bool CapturePortrait(const FString& OutputPath, int32 Width, int32 Height, FString& OutErrorMessage);
+
     FOnCharacterCreatorPreviewStateChanged OnPreviewStateChanged;
 
 protected:

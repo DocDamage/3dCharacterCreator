@@ -12,6 +12,50 @@ enum class ECharacterCreatorDeliverable : uint8
     Package
 };
 
+UENUM(BlueprintType)
+enum class ECharacterCreatorUnsavedDecision : uint8
+{
+    Save,
+    Discard,
+    Cancel
+};
+
+UENUM(BlueprintType)
+enum class ECharacterCreatorOperationState : uint8
+{
+    Idle,
+    Queued,
+    Running,
+    Completed,
+    CompletedWithErrors,
+    Cancelled,
+    Failed
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorExportProgress
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    ECharacterCreatorOperationState State = ECharacterCreatorOperationState::Idle;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    float Progress = 0.0f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    FText Stage;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    TArray<ECharacterCreatorDeliverable> Requested;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    TArray<ECharacterCreatorDeliverable> Succeeded;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    TArray<ECharacterCreatorDeliverable> Failed;
+};
+
 USTRUCT(BlueprintType)
 struct THREEDCHARACTER_API FCharacterCreatorSettings
 {
@@ -92,6 +136,15 @@ struct THREEDCHARACTER_API FCharacterCreatorSettings
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Settings|Backup")
     FString BackupDirectory;
 
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Settings|ImportExport")
+    FString ImportSourceDirectory;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Settings|ImportExport")
+    FString ImportDestinationDirectory;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Settings|ImportExport")
+    FString ExportDestinationDirectory;
+
     void Sanitize()
     {
         UIScale = FMath::Clamp(UIScale, 0.75f, 1.50f);
@@ -126,6 +179,12 @@ struct THREEDCHARACTER_API FCharacterCreatorProjectRecord
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
     bool bHasUnsavedChanges = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
+    int32 BackupCount = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
+    bool bRecoveryAvailable = false;
 };
 
 USTRUCT(BlueprintType)
@@ -140,10 +199,25 @@ struct THREEDCHARACTER_API FCharacterCreatorProjectBrowserState
     FString SelectedSlotName;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
+    FString ActiveSlotName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
+    FString PendingSlotName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
+    FString RecoverySlotName;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
     TArray<FCharacterCreatorProjectRecord> Projects;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
     bool bLoading = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
+    bool bUnsavedConfirmationRequired = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Project")
+    bool bAutosaveRecoveryAvailable = false;
 };
 
 USTRUCT(BlueprintType)
@@ -161,7 +235,16 @@ struct THREEDCHARACTER_API FCharacterCreatorExportHistoryEntry
     TArray<ECharacterCreatorDeliverable> Deliverables;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    TArray<ECharacterCreatorDeliverable> SuccessfulDeliverables;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    TArray<ECharacterCreatorDeliverable> FailedDeliverables;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
     bool bSucceeded = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
+    bool bPartialSuccess = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Export")
     FText Summary;

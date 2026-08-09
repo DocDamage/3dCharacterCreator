@@ -264,14 +264,16 @@ UCharacterCreatorSliderWidget* FCharacterCreatorUIFactory::MakeSlider(UWidgetTre
 void FCharacterCreatorUIFactory::AddLabel(UWidgetTree* Tree, UCanvasPanel* Canvas, const FString& Name, const FString& Value, const FVector2D& Position, const FVector2D& Size, int32 FontSize, const FLinearColor& Color)
 {
     UTextBlock* TextWidget = MakeLabel(Tree, Value, FontSize, Color);
-    TextWidget->Rename(*Name);
+    const FName UniqueName = MakeUniqueObjectName(Tree, TextWidget->GetClass(), FName(*Name));
+    TextWidget->Rename(*UniqueName.ToString());
     Place(Canvas, TextWidget, Position, Size);
 }
 
 void FCharacterCreatorUIFactory::AddPanel(UWidgetTree* Tree, UCanvasPanel* Canvas, const FString& Name, const FVector2D& Position, const FVector2D& Size, const FLinearColor& Color)
 {
     UCharacterCreatorPanelWidget* Border = MakePanel(Tree, Color);
-    Border->Rename(*Name);
+    const FName UniqueName = MakeUniqueObjectName(Tree, Border->GetClass(), FName(*Name));
+    Border->Rename(*UniqueName.ToString());
     Place(Canvas, Border, Position, Size);
 }
 

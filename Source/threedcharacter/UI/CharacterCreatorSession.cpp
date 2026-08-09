@@ -457,13 +457,14 @@ void UCharacterCreatorSession::InitializeDefaults()
     Settings.Sanitize();
     ProjectBrowser = FCharacterCreatorProjectBrowserState();
     FCharacterCreatorProjectRecord DefaultProject;
-    DefaultProject.SlotName = TEXT("CharacterCreator_Autosave");
+    DefaultProject.SlotName = TEXT("CharacterCreator_Project_Untitled");
     DefaultProject.DisplayName = FText::FromString(Settings.ProjectName);
     DefaultProject.LastModifiedUtc = FDateTime::UtcNow();
     DefaultProject.AssetCount = 0;
-    DefaultProject.bAutosave = true;
+    DefaultProject.bAutosave = false;
     ProjectBrowser.Projects.Add(DefaultProject);
     ProjectBrowser.SelectedSlotName = DefaultProject.SlotName;
+    ProjectBrowser.ActiveSlotName = DefaultProject.SlotName;
     ExportHistory.Reset();
     FocusGraph.Reset();
     FCharacterCreatorMaterialSlotState SkinMaterial;
@@ -1765,13 +1766,34 @@ void UCharacterCreatorSession::SelectBrowserAsset(const FString& AssetPath)
     }
 
     AppearanceState.AssetBrowser.SelectedAsset = AssetPath;
-    for (FCharacterCreatorAssetCatalogEntry& Entry : AppearanceState.AssetBrowser.Entries)
-    {
-        Entry.bSelected = Entry.SourceFile == AssetPath;
-    }
-    AppearanceState.AssetBrowser.bCanImport = true;
     AppearanceState.bHasUnsavedChanges = true;
     OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::ToggleBrowserAssetSelection(const FString& AssetPath)
+{
+    if (FCharacterCreatorAssetCatalogEntry* Entry = AppearanceState.AssetBrowser.Entries.FindByPredicate([&AssetPath](const FCharacterCreatorAssetCatalogEntry& Item) { return Item.SourceFile == AssetPath; }))
+    {
+        if (Entry->Compatibility != ECharacterCreatorAssetCompatibility::Incompatible) Entry->bSelected = !Entry->bSelected;
+        AppearanceState.AssetBrowser.SelectedAsset = AssetPath;
+        AppearanceState.AssetBrowser.bCanImport = AppearanceState.AssetBrowser.Entries.ContainsByPredicate([](const FCharacterCreatorAssetCatalogEntry& Item)
+        {
+            return Item.bSelected && Item.Compatibility != ECharacterCreatorAssetCompatibility::Incompatible;
+        });
+        AppearanceState.bHasUnsavedChanges = true;
+        OnAppearanceChanged.Broadcast(AppearanceState);
+    }
+}
+
+void UCharacterCreatorSession::ToggleBrowserAssetFavorite(const FString& AssetPath)
+{
+    if (FCharacterCreatorAssetCatalogEntry* Entry = AppearanceState.AssetBrowser.Entries.FindByPredicate([&AssetPath](const FCharacterCreatorAssetCatalogEntry& Item) { return Item.SourceFile == AssetPath; }))
+    {
+        Entry->bFavorite = !Entry->bFavorite;
+        AppearanceState.AssetBrowser.SelectedAsset = AssetPath;
+        AppearanceState.bHasUnsavedChanges = true;
+        OnAppearanceChanged.Broadcast(AppearanceState);
+    }
 }
 
 void UCharacterCreatorSession::Shutdown()

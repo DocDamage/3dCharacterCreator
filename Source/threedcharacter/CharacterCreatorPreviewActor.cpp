@@ -11,6 +11,9 @@
 #include "Animation/MorphTarget.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
+#include "HAL/FileManager.h"
+#include "Kismet/KismetRenderingLibrary.h"
+#include "Misc/Paths.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "UObject/ConstructorHelpers.h"
@@ -150,6 +153,50 @@ void ACharacterCreatorPreviewActor::SetCameraOrbit(float Yaw, float Pitch, float
         SceneCapture->SetRelativeRotation(AimRotation);
         SceneCapture->FOVAngle = FieldOfView;
     }
+}
+
+bool ACharacterCreatorPreviewActor::CapturePortrait(const FString& OutputPath, int32 Width, int32 Height, FString& OutErrorMessage)
+{
+    OutErrorMessage.Reset();
+    if (!SceneCapture || !PreviewRenderTarget || OutputPath.IsEmpty())
+    {
+        OutErrorMessage = TEXT("The live preview render target is not ready.");
+        return false;
+    }
+
+    const int32 SafeWidth = FMath::Clamp(Width, 128, 4096);
+    const int32 SafeHeight = FMath::Clamp(Height, 128, 4096);
+    const FString OutputDirectory = FPaths::GetPath(OutputPath);
+    const FString OutputFilename = FPaths::GetBaseFilename(OutputPath);
+    if (OutputDirectory.IsEmpty() || OutputFilename.IsEmpty())
+    {
+        OutErrorMessage = TEXT("Choose a complete portrait output path.");
+        return false;
+    }
+
+    IFileManager::Get().MakeDirectory(*OutputDirectory, true);
+    const int32 PreviousWidth = PreviewRenderTarget->SizeX;
+    const int32 PreviousHeight = PreviewRenderTarget->SizeY;
+    PreviewRenderTarget->ResizeTarget(SafeWidth, SafeHeight);
+    PreviewRenderTarget->UpdateResourceImmediate(true);
+    SceneCapture->CaptureScene();
+    UKismetRenderingLibrary::ExportRenderTarget(this, PreviewRenderTarget, OutputDirectory, OutputFilename);
+    PreviewRenderTarget->ResizeTarget(PreviousWidth, PreviousHeight);
+    PreviewRenderTarget->UpdateResourceImmediate(true);
+    SceneCapture->CaptureScene();
+
+    const FString WrittenPath = FPaths::Combine(OutputDirectory, OutputFilename + TEXT(".png"));
+    if (!IFileManager::Get().FileExists(*WrittenPath) || IFileManager::Get().FileSize(*WrittenPath) <= 0)
+    {
+        OutErrorMessage = FString::Printf(TEXT("The render target export did not create %s."), *WrittenPath);
+        return false;
+    }
+    if (Session)
+    {
+        Session->PreparePortraitCapture(WrittenPath, SafeWidth, SafeHeight, FName(TEXT("PNG")));
+        Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Portrait captured to %s"), *WrittenPath)));
+    }
+    return true;
 }
 
 void ACharacterCreatorPreviewActor::InitializeWithSession(UCharacterCreatorSession* InSession)

@@ -11,6 +11,7 @@ class UCanvasPanel;
 class UScaleBox;
 class USizeBox;
 class UTextBlock;
+class UEditableTextBox;
 class UWidget;
 class UWidgetSwitcher;
 class UCharacterCreatorSliderWidget;
@@ -61,6 +62,7 @@ private:
     void HandleGamepadCameraInput(const FAnalogInputEvent& AnalogEvent);
 
     virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+    virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
     virtual FReply NativeOnAnalogValueChanged(const FGeometry& InGeometry, const FAnalogInputEvent& InAnalogEvent) override;
 
     UFUNCTION()
@@ -148,6 +150,9 @@ private:
     TObjectPtr<UTextBlock> CharacterPreviewStatusText;
 
     UPROPERTY()
+    TObjectPtr<UEditableTextBox> ModalTextInput;
+
+    UPROPERTY()
     TObjectPtr<UImage> DashboardPreviewImage;
 
     UPROPERTY()
@@ -182,6 +187,7 @@ private:
 
     bool bLayoutBuilt = false;
     bool bRefreshingAppearance = false;
+    int32 ModalInstanceSerial = 0;
     FLinearColor PendingColorPickerColor = FLinearColor::White;
     ECharacterCreatorColorTarget PendingColorPickerTarget = ECharacterCreatorColorTarget::Skin;
     TWeakObjectPtr<UWidget> LastFocusWidget;

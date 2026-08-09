@@ -17,7 +17,8 @@ public class threedcharacter : ModuleRules
                 "UMG",
                 "Slate",
                 "SlateCore",
-                "Json"
+                "Json",
+                "AssetRegistry"
             });
 
         if (Target.bBuildEditor)

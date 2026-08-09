@@ -6,7 +6,7 @@
 
 ## Acceptance summary
 
-P17 real-asset delivery is verified. P18 covers all 39 references and records visual deviations. Settings, modal behavior, accessibility styling, performance controls, the color-picker modal, and directional gamepad focus received a concrete hardening pass. P19 is complete for this implementation slice; pixel-level Penpot parity and non-headless screenshot evidence remain explicitly open rather than being claimed complete.
+P17 real-asset delivery is verified. P18 covers all 39 references and records visual deviations. The later P20 hardening slice added named-project lifecycle operations, hardened import/export, a mounted data-driven asset library, actual UMG-flow automation, packaged screenshots, and physical DualSense validation. See `P20_P0_P1_COMPLETION.md` for the current completion record.
 
 ## Build and automation evidence
 
@@ -24,7 +24,7 @@ Automation command:
 & "C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor-Cmd.exe" "$PWD\threedcharacter.uproject" -unattended -nop4 -nosplash -nullrhi -ExecCmds="Automation RunTests CharacterCreator; Quit"
 ```
 
-Result: process exit code `0`; all five discovered tests passed:
+Original P19 result: process exit code `0`; all five discovered tests passed. The current P20 suite expands this to eight passing tests with zero failures; its log is `Saved/Logs/CharacterCreatorP0P1Final5.log`.
 
 - `CharacterCreator.Export.Contract`
 - `CharacterCreator.Import.FreeAnimationsPack`
@@ -54,22 +54,22 @@ The staged export folder was:
 
 It contained the real Blueprint/Data Asset package files and `ActiveCharacter.package-manifest.json`. The manifest is intentionally metadata about the generated deliverables; it is not a substitute for them.
 
-## Screenshot evidence and limitation
+## Screenshot evidence update
 
-The attempted non-headless capture command was:
+The original P19 attempted non-headless capture command was:
 
 ```powershell
 UnrealEditor.exe threedcharacter.uproject -game -windowed -ResX=1440 -ResY=810 -nosplash -unattended -ExecCmds="HighResShot 1440x810; Quit"
 ```
 
-The game/editor window remained alive past the expected capture/quit window and was stopped after inspection. No `Saved/Screenshots` output was produced by that attempt. Existing unrelated screenshots were not relabeled as Character Creator evidence. P18 therefore relies on source/reference inspection plus code-level responsive/focus evidence, and keeps pixel comparison sign-off open.
+That original editor capture attempt produced no screenshot. P20 supersedes this limitation with a packaged Win32 harness and eight captured states under `Saved/PackagedQAArtifacts_Final24`; the packaged flow report passes. Physical DualSense evidence is separately recorded under `Saved/PackagedQAArtifacts_PhysicalDualSense4`.
 
 ## Known deviations and warnings
 
 - Visual parity is partial: the current UI is a native C++ UMG foundation, while Penpot references include detailed compositions, thumbnails, graphs, timelines, and bespoke visual assets.
 - The color picker is now a dedicated RGB-slider modal; arbitrary HSV editing is still future work.
 - Project-browser, preset-manager, and randomization-rules screens remain simplified; the validation dashboard is functional but not Penpot-faithful.
-- The focus graph is now directional nearest-neighbor, but still needs physical-controller/device sign-off.
+- The focus graph is directional nearest-neighbor. A wired DualSense now has physical-device sign-off for a real R1-driven packaged UI transition; exhaustive certification of every button and transport remains outside this slice.
 - The final headless editor log is free of the missing Manny material-instance and placeholder `/Game/Test` warnings. The imported Manny package still reports stale/out-of-date PoseAssets, and the source idle reports no animation curves during retargeting; these source-asset warnings did not fail the P17 test.
 - Generated Content assets are local Unreal outputs and are ignored by the current Git surface; the tracked source generator and automation test are the reproducible evidence.
 
@@ -94,4 +94,4 @@ The game/editor window remained alive past the expected capture/quit window and 
 
 ## Final disposition
 
-The implementation is safe to hand off as a verified P17 real-asset vertical slice with P18/P19 evidence. The next product slice should focus on Penpot-faithful visual composition and captured responsive/device QA, followed by arbitrary color editing, dedicated browser/preset/randomization compositions, and authoring graph screens.
+The implementation is safe to hand off as a verified P17 real-asset vertical slice. P20 closes the requested P0/P1 production-hardening outcomes and provides packaged responsive/device evidence. Future work may focus on pixel-level Penpot art-direction parity and broader device certification.

@@ -57,6 +57,11 @@ namespace
 void UCharacterCreatorAnimationWorkspaceWidget::InitializeWithSession(UCharacterCreatorSession* InSession)
 {
     Session = InSession;
+    if (WidgetTree && !bLayoutBuilt)
+    {
+        BuildLayout();
+        bLayoutBuilt = true;
+    }
 }
 
 void UCharacterCreatorAnimationWorkspaceWidget::InitializeWithPreviewActor(ACharacterCreatorPreviewActor* InPreviewActor)

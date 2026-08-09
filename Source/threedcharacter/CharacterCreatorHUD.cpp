@@ -50,9 +50,14 @@ void ACharacterCreatorHUD::BeginPlay()
         return;
     }
 
-    RootWidget->InitializeWithSession(Session);
     RootWidget->InitializeWithPreviewActor(PreviewActor);
-    RootWidget->AddToViewport(0);
+    RootWidget->InitializeWithSession(Session);
+    if (!RootWidget->AddToPlayerScreen(0))
+    {
+        RootWidget->AddToViewport(0);
+    }
+    RootWidget->SetVisibility(ESlateVisibility::Visible);
+    UE_LOG(LogTemp, Display, TEXT("Character Creator root widget attached: constructed=%d inViewport=%d"), RootWidget->IsConstructed(), RootWidget->IsInViewport());
 
     FInputModeUIOnly InputMode;
     InputMode.SetWidgetToFocus(RootWidget->TakeWidget());

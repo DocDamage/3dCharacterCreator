@@ -21,6 +21,10 @@
 		{
 			"Name": "IKRig",
 			"Enabled": true
+		},
+		{
+			"Name": "GameInputWindows",
+			"Enabled": true
 		}
 	]
 }

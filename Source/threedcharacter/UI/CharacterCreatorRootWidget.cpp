@@ -8,6 +8,7 @@
 #include "Components/ScaleBox.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Components/EditableTextBox.h"
 #include "Components/WidgetSwitcher.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "Misc/Paths.h"
@@ -94,6 +95,11 @@ namespace
 void UCharacterCreatorRootWidget::InitializeWithSession(UCharacterCreatorSession* InSession)
 {
     Session = InSession;
+    if (WidgetTree && !bLayoutBuilt)
+    {
+        BuildLayout();
+        bLayoutBuilt = true;
+    }
 }
 
 void UCharacterCreatorRootWidget::InitializeWithPreviewActor(ACharacterCreatorPreviewActor* InPreviewActor)
@@ -132,6 +138,7 @@ void UCharacterCreatorRootWidget::NativeConstruct()
         BuildLayout();
         bLayoutBuilt = true;
     }
+    UE_LOG(LogTemp, Display, TEXT("Character Creator UMG layout built: session=%d root=%d screens=%d"), Session != nullptr, WidgetTree && WidgetTree->RootWidget != nullptr, ScreenSwitcher ? ScreenSwitcher->GetNumWidgets() : 0);
 
     if (Session)
     {
@@ -168,6 +175,11 @@ void UCharacterCreatorRootWidget::NativeDestruct()
     if (MaterialsScreen)
     {
         MaterialsScreen->OnModalRequested.RemoveAll(this);
+    }
+
+    for (UCharacterCreatorUtilityWorkspaceWidget* UtilityScreen : UtilityScreens)
+    {
+        if (UtilityScreen) UtilityScreen->OnModalRequested.RemoveAll(this);
     }
 
     if (PreviewActor)
@@ -278,6 +290,7 @@ void UCharacterCreatorRootWidget::BuildLayout()
         UtilityScreen->SetWorkspaceScreen(UtilityScreenId);
         UtilityScreen->InitializeWithSession(Session);
         UtilityScreen->InitializeWithPreviewActor(PreviewActor);
+        UtilityScreen->OnModalRequested.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowModalRequested);
         UtilityScreens.Add(UtilityScreen);
         ScreenSwitcher->AddChild(UtilityScreen);
     }
@@ -394,13 +407,13 @@ void UCharacterCreatorRootWidget::BuildDashboard(UCanvasPanel* Screen)
 
     UCharacterCreatorCommandButtonWidget* RandomizeCharacterButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, TEXT("RANDOMIZE CHARACTER"), FName(TEXT("randomize")), ECharacterCreatorButtonStyle::Secondary, 11);
     RandomizeCharacterButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
-    Place(Screen, RandomizeCharacterButton, FVector2D(924.0f, 468.0f), FVector2D(132.0f, 32.0f));
+    Place(Screen, RandomizeCharacterButton, FVector2D(924.0f, 460.0f), FVector2D(132.0f, 32.0f));
 
     UCharacterCreatorCommandButtonWidget* PresetManagerButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, TEXT("PRESET MANAGER"), FName(TEXT("preset_manager")), ECharacterCreatorButtonStyle::Secondary, 11);
     PresetManagerButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
-    Place(Screen, PresetManagerButton, FVector2D(1066.0f, 468.0f), FVector2D(132.0f, 32.0f));
+    Place(Screen, PresetManagerButton, FVector2D(1066.0f, 460.0f), FVector2D(132.0f, 32.0f));
 
-    AddLabel(WidgetTree, Screen, TEXT("QuickActionHint"), TEXT("Start from a template or bring in an existing asset."), FVector2D(924.0f, 464.0f), FVector2D(258.0f, 24.0f), 9, Muted);
+    AddLabel(WidgetTree, Screen, TEXT("QuickActionHint"), TEXT("Start from a template or bring in an existing asset."), FVector2D(924.0f, 578.0f), FVector2D(258.0f, 18.0f), 9, Muted);
     AddPanel(WidgetTree, Screen, TEXT("DashboardStatusPanel"), FVector2D(924.0f, 496.0f), FVector2D(274.0f, 74.0f), SurfaceMuted);
     AddLabel(WidgetTree, Screen, TEXT("DashboardStatusLabel"), TEXT("SYSTEM STATUS"), FVector2D(942.0f, 510.0f), FVector2D(180.0f, 14.0f), 9, Muted);
     DashboardStatusText = Label(WidgetTree, TEXT("Ready for a new character"), 11, Success);
@@ -793,6 +806,20 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
     }
 
     return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UCharacterCreatorRootWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+    const FKey Key = InKeyEvent.GetKey();
+    if (Key == EKeys::Escape || Key == EKeys::Gamepad_FaceButton_Right)
+    {
+        if (ModalManager && ModalManager->CloseTopModal())
+        {
+            BuildFocusGraphForActiveScreen();
+            return FReply::Handled();
+        }
+    }
+    return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
 FReply UCharacterCreatorRootWidget::NativeOnAnalogValueChanged(const FGeometry& InGeometry, const FAnalogInputEvent& InAnalogEvent)
@@ -1216,13 +1243,14 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
         ModalManager->CloseTopModal();
     }
 
+    const int32 ModalSerial = ++ModalInstanceSerial;
     UCharacterCreatorModalWidget* Modal = WidgetTree->ConstructWidget<UCharacterCreatorModalWidget>();
     if (!Modal)
     {
         return;
     }
 
-    Modal->Rename(*DialogId.ToString());
+    Modal->Rename(*FString::Printf(TEXT("%s_%d"), *DialogId.ToString(), ModalSerial));
     Modal->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.78f));
     UWidget* PreviousFocus = LastFocusWidget.Get();
 
@@ -1230,10 +1258,17 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
     Modal->AddChild(ModalCanvas);
 
     const bool bColorPicker = DialogId == FName(TEXT("color_picker"));
+    const bool bTextPrompt = DialogId == FName(TEXT("project_new"))
+        || DialogId == FName(TEXT("project_save_as"))
+        || DialogId == FName(TEXT("project_rename"))
+        || DialogId == FName(TEXT("project_duplicate"))
+        || DialogId == FName(TEXT("import_source"))
+        || DialogId == FName(TEXT("import_destination"))
+        || DialogId == FName(TEXT("export_destination"));
     const int32 ActionCount = FMath::Max(1, Actions.Num());
     const float DialogHeight = bColorPicker
         ? FMath::Clamp(380.0f + (static_cast<float>(ActionCount) * 48.0f), 500.0f, 700.0f)
-        : FMath::Clamp(230.0f + (static_cast<float>(ActionCount) * 48.0f), 280.0f, 470.0f);
+        : FMath::Clamp((bTextPrompt ? 290.0f : 230.0f) + (static_cast<float>(ActionCount) * 48.0f), 280.0f, 530.0f);
     const FVector2D DialogSize(560.0f, DialogHeight);
     const FVector2D DialogPosition = UCharacterCreatorUIHelpers::ClampPopupPosition(
         FVector2D((1440.0f - DialogSize.X) * 0.5f, (810.0f - DialogSize.Y) * 0.5f),
@@ -1246,7 +1281,7 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
     UCanvasPanel* DialogContent = WidgetTree->ConstructWidget<UCanvasPanel>();
     DialogPanel->AddChild(DialogContent);
 
-    FCharacterCreatorUIFactory::AddLabel(WidgetTree, DialogContent, TEXT("DialogTitle"), Title.ToUpper(), FVector2D(28.0f, 24.0f), FVector2D(500.0f, 28.0f), 16, CharacterCreatorUI::Gold);
+    FCharacterCreatorUIFactory::AddLabel(WidgetTree, DialogContent, FString::Printf(TEXT("DialogTitle_%d"), ModalSerial), Title.ToUpper(), FVector2D(28.0f, 24.0f), FVector2D(500.0f, 28.0f), 16, CharacterCreatorUI::Gold);
     UTextBlock* DialogMessageText = FCharacterCreatorUIFactory::MakeLabel(WidgetTree, Message, 11, CharacterCreatorUI::Text);
     DialogMessageText->SetAutoWrapText(true);
     FCharacterCreatorUIFactory::Place(DialogContent, DialogMessageText, FVector2D(28.0f, 68.0f), FVector2D(500.0f, 88.0f));
@@ -1259,6 +1294,28 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
 
     TArray<UWidget*> ModalFocusWidgets;
     UWidget* FirstAction = nullptr;
+    ModalTextInput = nullptr;
+
+    if (bTextPrompt)
+    {
+        FString InitialValue;
+        if (Session)
+        {
+            InitialValue = Session->GetSettings().ProjectName;
+            if (DialogId == FName(TEXT("project_duplicate"))) InitialValue += TEXT(" Copy");
+            if (DialogId == FName(TEXT("project_new"))) InitialValue = TEXT("New Character Project");
+            if (DialogId == FName(TEXT("import_source"))) InitialValue = Session->GetSettings().ImportSourceDirectory;
+            if (DialogId == FName(TEXT("import_destination"))) InitialValue = Session->GetSettings().ImportDestinationDirectory;
+            if (DialogId == FName(TEXT("export_destination"))) InitialValue = Session->GetSettings().ExportDestinationDirectory;
+        }
+        ModalTextInput = WidgetTree->ConstructWidget<UEditableTextBox>();
+        ModalTextInput->SetText(FText::FromString(InitialValue));
+        ModalTextInput->SetHintText(FText::FromString(TEXT("Project name")));
+        ModalTextInput->SetIsReadOnly(false);
+        FCharacterCreatorUIFactory::Place(DialogContent, ModalTextInput, FVector2D(28.0f, 164.0f), FVector2D(500.0f, 38.0f));
+        ModalFocusWidgets.Add(ModalTextInput);
+        FirstAction = ModalTextInput;
+    }
 
     if (bColorPicker)
     {
@@ -1277,7 +1334,7 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
             FCharacterCreatorUIFactory::AddLabel(
                 WidgetTree,
                 DialogContent,
-                FString::Printf(TEXT("ColorPickerChannel_%d"), ChannelIndex),
+                FString::Printf(TEXT("ColorPickerChannel_%d_%d"), ModalSerial, ChannelIndex),
                 Channels[ChannelIndex].Get<0>(),
                 FVector2D(28.0f, ChannelY),
                 FVector2D(72.0f, 28.0f),
@@ -1310,7 +1367,7 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
             11);
         ActionButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleModalCommand);
 
-        const float ActionY = (bColorPicker ? 320.0f : 174.0f) + (static_cast<float>(ActionIndex) * 44.0f);
+        const float ActionY = (bColorPicker ? 320.0f : bTextPrompt ? 224.0f : 174.0f) + (static_cast<float>(ActionIndex) * 44.0f);
         FCharacterCreatorUIFactory::Place(DialogContent, ActionButton, FVector2D(28.0f, ActionY), FVector2D(500.0f, 34.0f));
         if (!FirstAction)
         {
@@ -1350,6 +1407,7 @@ void UCharacterCreatorRootWidget::CloseTopModalAndRestoreFocus()
 {
     if (ModalManager && ModalManager->CloseTopModal())
     {
+        ModalTextInput = nullptr;
         BuildFocusGraphForActiveScreen();
     }
 }
@@ -1360,6 +1418,105 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
         || CommandId == FName(TEXT("dialog_cancel"))
         || CommandId == FName(TEXT("dialog_new_cancel")))
     {
+        CloseTopModalAndRestoreFocus();
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_project_new_confirm"))
+        || CommandId == FName(TEXT("dialog_project_save_as_confirm"))
+        || CommandId == FName(TEXT("dialog_project_rename_confirm"))
+        || CommandId == FName(TEXT("dialog_project_duplicate_confirm")))
+    {
+        const FString Value = ModalTextInput ? ModalTextInput->GetText().ToString().TrimStartAndEnd() : FString();
+        bool bSucceeded = false;
+        bool bNeedsUnsavedConfirmation = false;
+        if (Session)
+        {
+            if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+            {
+                const FString SelectedSlot = Session->GetProjectBrowserState().SelectedSlotName;
+                if (CommandId == FName(TEXT("dialog_project_new_confirm"))) bSucceeded = Subsystem->CreateProject(Value);
+                if (CommandId == FName(TEXT("dialog_project_save_as_confirm"))) bSucceeded = Subsystem->SaveCurrentProjectAs(Value);
+                if (CommandId == FName(TEXT("dialog_project_rename_confirm"))) bSucceeded = Subsystem->RenameProject(SelectedSlot, Value);
+                if (CommandId == FName(TEXT("dialog_project_duplicate_confirm"))) bSucceeded = Subsystem->DuplicateProject(SelectedSlot, Value);
+                bNeedsUnsavedConfirmation = Session->GetProjectBrowserState().bUnsavedConfirmationRequired;
+            }
+        }
+        CloseTopModalAndRestoreFocus();
+        if (bNeedsUnsavedConfirmation)
+        {
+            HandleWorkflowModalRequested(FName(TEXT("unsaved_project")));
+        }
+        else if (bSucceeded && Session)
+        {
+            Session->SetScreen(ECharacterCreatorScreen::ProjectBrowser);
+        }
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_import_source_confirm")) || CommandId == FName(TEXT("dialog_import_destination_confirm")) || CommandId == FName(TEXT("dialog_export_destination_confirm")))
+    {
+        if (Session && ModalTextInput)
+        {
+            FString Directory = ModalTextInput->GetText().ToString().TrimStartAndEnd();
+            if (!Directory.IsEmpty()) Directory = FPaths::ConvertRelativePathToFull(Directory);
+            if (Directory.IsEmpty())
+            {
+                Session->SetStatusMessage(FText::FromString(TEXT("A destination folder cannot be empty.")));
+            }
+            else
+            {
+                FCharacterCreatorSettings Settings = Session->GetSettings();
+                if (CommandId == FName(TEXT("dialog_import_source_confirm"))) Settings.ImportSourceDirectory = Directory;
+                if (CommandId == FName(TEXT("dialog_import_destination_confirm"))) Settings.ImportDestinationDirectory = Directory;
+                if (CommandId == FName(TEXT("dialog_export_destination_confirm"))) Settings.ExportDestinationDirectory = Directory;
+                Session->SetSettings(Settings);
+                Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Folder set to %s"), *Directory)));
+            }
+        }
+        CloseTopModalAndRestoreFocus();
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_project_delete_confirm")))
+    {
+        if (Session)
+        {
+            if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+            {
+                Subsystem->DeleteProject(Session->GetProjectBrowserState().SelectedSlotName);
+            }
+        }
+        CloseTopModalAndRestoreFocus();
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_project_recover")) || CommandId == FName(TEXT("dialog_project_recovery_dismiss")))
+    {
+        if (Session)
+        {
+            if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+            {
+                if (CommandId == FName(TEXT("dialog_project_recover"))) Subsystem->RecoverAutosave();
+                else Subsystem->DismissAutosaveRecovery();
+            }
+        }
+        CloseTopModalAndRestoreFocus();
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_unsaved_save")) || CommandId == FName(TEXT("dialog_unsaved_discard")) || CommandId == FName(TEXT("dialog_unsaved_cancel")))
+    {
+        if (Session)
+        {
+            if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+            {
+                const ECharacterCreatorUnsavedDecision Decision = CommandId == FName(TEXT("dialog_unsaved_save"))
+                    ? ECharacterCreatorUnsavedDecision::Save
+                    : CommandId == FName(TEXT("dialog_unsaved_discard")) ? ECharacterCreatorUnsavedDecision::Discard : ECharacterCreatorUnsavedDecision::Cancel;
+                Subsystem->ResolvePendingProjectChange(Decision);
+            }
+        }
         CloseTopModalAndRestoreFocus();
         return;
     }
@@ -1414,7 +1571,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
             if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
             {
                 FCharacterCreatorImportProgress Progress;
-                Subsystem->ValidateImportDirectory(FPaths::Combine(FPaths::ProjectContentDir(), TEXT("FreeAnimationsPack")), Progress);
+                Subsystem->ScanAssetDirectory(Session->GetSettings().ImportSourceDirectory, FString(), FString(), Progress);
             }
         }
         CloseTopModalAndRestoreFocus();
@@ -1454,7 +1611,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
 
     if (CommandId == FName(TEXT("dialog_export_full")) || CommandId == FName(TEXT("dialog_export_metadata")))
     {
-        bool bExported = false;
+        bool bQueued = false;
         if (Session)
         {
             if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
@@ -1466,19 +1623,19 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
                     Profile.bIncludeMaterials = false;
                     Profile.bIncludeAnimations = false;
                     Profile.bIncludeMetadata = true;
-                    bExported = Subsystem->ExportCurrentManifest(Profile, FString());
+                    bQueued = Subsystem->StartExportCurrentDeliverables(Profile, FString());
                 }
                 else
                 {
                     Profile.bGenerateBlueprint = true;
                     Profile.bGenerateDataAsset = true;
                     Profile.bGeneratePackage = true;
-                    bExported = Subsystem->ExportCurrentDeliverables(Profile, FString());
+                    bQueued = Subsystem->StartExportCurrentDeliverables(Profile, FString());
                 }
             }
         }
         CloseTopModalAndRestoreFocus();
-        OpenModalDialog(bExported ? FName(TEXT("export_success")) : FName(TEXT("export_error")), bExported ? TEXT("EXPORT COMPLETE") : TEXT("EXPORT BLOCKED"), bExported ? TEXT("Real Blueprint, Data Asset, and staged Unreal package files were generated under the project Content and Saved export folders.") : TEXT("Export validation found a blocking issue. Open Validation + Export to review the issue list and apply safe fixes."), { TPair<FName, FString>(FName(TEXT("dialog_close")), bExported ? TEXT("DONE") : TEXT("REVIEW LATER")) });
+        OpenModalDialog(bQueued ? FName(TEXT("export_queued")) : FName(TEXT("export_error")), bQueued ? TEXT("EXPORT QUEUED") : TEXT("EXPORT BLOCKED"), bQueued ? TEXT("Export is queued. Open Validation + Export to monitor its status, cancel before generation begins, review partial failures, or open the selected output folder.") : TEXT("Export validation found a blocking issue. Open Validation + Export to review the issue list and apply safe fixes."), { TPair<FName, FString>(FName(TEXT("dialog_close")), bQueued ? TEXT("CONTINUE") : TEXT("REVIEW LATER")) });
         return;
     }
 
@@ -1519,14 +1676,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
 
 void UCharacterCreatorRootWidget::HandleNewCharacterClicked()
 {
-    OpenModalDialog(
-        FName(TEXT("new_character")),
-        TEXT("NEW CHARACTER"),
-        TEXT("Start a fresh Sidekick character? Unsaved changes remain available through the current session until you save or revert."),
-        {
-            TPair<FName, FString>(FName(TEXT("dialog_new_confirm")), TEXT("START NEW CHARACTER")),
-            TPair<FName, FString>(FName(TEXT("dialog_new_cancel")), TEXT("CANCEL"))
-        });
+    HandleWorkflowModalRequested(FName(TEXT("project_new")));
 }
 
 void UCharacterCreatorRootWidget::HandleBackToDashboardClicked()
@@ -1544,7 +1694,7 @@ void UCharacterCreatorRootWidget::HandleSaveCharacterClicked()
     {
         if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
         {
-            Subsystem->SaveAutosave();
+            Subsystem->SaveCurrentProject();
         }
         else
         {
@@ -1668,6 +1818,46 @@ void UCharacterCreatorRootWidget::HandleWorkflowModalRequested(FName DialogId)
                 TPair<FName, FString>(FName(TEXT("dialog_color_apply_secondary")), TEXT("APPLY TO SECONDARY OUTFIT")),
                 TPair<FName, FString>(FName(TEXT("dialog_cancel")), TEXT("CANCEL"))
             });
+    }
+    else if (DialogId == FName(TEXT("project_new")))
+    {
+        OpenModalDialog(DialogId, TEXT("NEW PROJECT"), TEXT("Create a named project. It is written immediately and becomes the active autosave target."), { {FName(TEXT("dialog_project_new_confirm")), TEXT("CREATE PROJECT")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("project_save_as")))
+    {
+        OpenModalDialog(DialogId, TEXT("SAVE PROJECT AS"), TEXT("Save the current character under a new project name without overwriting the active project."), { {FName(TEXT("dialog_project_save_as_confirm")), TEXT("SAVE AS")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("project_rename")))
+    {
+        OpenModalDialog(DialogId, TEXT("RENAME PROJECT"), TEXT("Change the selected project's display name. Existing backups and its stable save identity are retained."), { {FName(TEXT("dialog_project_rename_confirm")), TEXT("RENAME")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("project_duplicate")))
+    {
+        OpenModalDialog(DialogId, TEXT("DUPLICATE PROJECT"), TEXT("Create an independent copy of the selected project and its character state."), { {FName(TEXT("dialog_project_duplicate_confirm")), TEXT("DUPLICATE")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("project_delete")))
+    {
+        OpenModalDialog(DialogId, TEXT("DELETE PROJECT"), TEXT("Delete the selected project, its autosave snapshot, and retained backups. This cannot be undone."), { {FName(TEXT("dialog_project_delete_confirm")), TEXT("DELETE PROJECT")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("project_recover")))
+    {
+        OpenModalDialog(DialogId, TEXT("AUTOSAVE RECOVERY"), TEXT("A newer recovery snapshot is available. Recover it as unsaved changes, or retain it and dismiss this prompt."), { {FName(TEXT("dialog_project_recover")), TEXT("RECOVER")}, {FName(TEXT("dialog_project_recovery_dismiss")), TEXT("DISMISS")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("unsaved_project")))
+    {
+        OpenModalDialog(DialogId, TEXT("UNSAVED CHANGES"), TEXT("Save the active project before switching, discard the edits, or cancel the project change."), { {FName(TEXT("dialog_unsaved_save")), TEXT("SAVE AND CONTINUE")}, {FName(TEXT("dialog_unsaved_discard")), TEXT("DISCARD AND CONTINUE")}, {FName(TEXT("dialog_unsaved_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("import_source")))
+    {
+        OpenModalDialog(DialogId, TEXT("IMPORT SOURCE"), TEXT("Enter the extracted Unreal Content folder to analyze. AssetRegistry dependencies are available when the folder is mounted under this project Content directory."), { {FName(TEXT("dialog_import_source_confirm")), TEXT("USE SOURCE")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("import_destination")))
+    {
+        OpenModalDialog(DialogId, TEXT("IMPORT DESTINATION"), TEXT("Enter the destination Content directory. Raw Unreal packages retain their internal package references, so preserve their relative Content paths when moving between projects."), { {FName(TEXT("dialog_import_destination_confirm")), TEXT("USE DESTINATION")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
+    }
+    else if (DialogId == FName(TEXT("export_destination")))
+    {
+        OpenModalDialog(DialogId, TEXT("EXPORT DESTINATION"), TEXT("Enter the folder for manifests and staged Unreal package files. The folder is created on export if necessary."), { {FName(TEXT("dialog_export_destination_confirm")), TEXT("USE DESTINATION")}, {FName(TEXT("dialog_cancel")), TEXT("CANCEL")} });
     }
 }
 

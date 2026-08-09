@@ -1311,6 +1311,12 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
     void SelectBrowserAsset(const FString& AssetPath);
 
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
+    void ToggleBrowserAssetSelection(const FString& AssetPath);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
+    void ToggleBrowserAssetFavorite(const FString& AssetPath);
+
     void Shutdown();
 
     FOnCharacterCreatorScreenChanged OnScreenChanged;

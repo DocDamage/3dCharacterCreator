@@ -3,7 +3,9 @@
 #include "Kismet/GameplayStatics.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Engine/World.h"
+#include "Async/Async.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformProcess.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "TimerManager.h"
@@ -14,6 +16,24 @@
 #include "UI/CharacterCreatorImportService.h"
 #include "UI/CharacterCreatorSaveGame.h"
 #include "UI/CharacterCreatorSession.h"
+
+namespace
+{
+    bool IsSafeCharacterCreatorSlot(const FString& SlotName)
+    {
+        if (SlotName.IsEmpty() || SlotName.Len() > 128) return false;
+        for (const TCHAR Character : SlotName)
+        {
+            if (!(FChar::IsAlnum(Character) || Character == TEXT('_') || Character == TEXT('-'))) return false;
+        }
+        return true;
+    }
+
+    bool IsCataloguedProject(const FCharacterCreatorProjectBrowserState& Browser, const FString& SlotName)
+    {
+        return Browser.Projects.ContainsByPredicate([&SlotName](const FCharacterCreatorProjectRecord& Project) { return Project.SlotName == SlotName; });
+    }
+}
 
 void UCharacterCreatorSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
@@ -26,6 +46,31 @@ void UCharacterCreatorSubsystem::Initialize(FSubsystemCollectionBase& Collection
         Session->OnSettingsChanged.AddUObject(this, &UCharacterCreatorSubsystem::HandleSettingsChanged);
         LoadPreferences();
         LoadProjectCatalog();
+        FCharacterCreatorSettings Settings = Session->GetSettings();
+        if (Settings.ImportSourceDirectory.IsEmpty())
+        {
+            Settings.ImportSourceDirectory = FPaths::Combine(FPaths::ProjectContentDir(), TEXT("FreeAnimationsPack"));
+        }
+        if (Settings.ImportDestinationDirectory.IsEmpty())
+        {
+            Settings.ImportDestinationDirectory = FPaths::Combine(FPaths::ProjectContentDir(), TEXT("CharacterCreator"), TEXT("Imported"));
+        }
+        if (Settings.ExportDestinationDirectory.IsEmpty())
+        {
+            Settings.ExportDestinationDirectory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Exports"));
+        }
+        Session->SetSettings(Settings);
+        ActiveProjectSlotName = Session->GetProjectBrowserState().ActiveSlotName;
+        if (ActiveProjectSlotName.IsEmpty())
+        {
+            ActiveProjectSlotName = Session->GetProjectBrowserState().SelectedSlotName;
+        }
+        if (ActiveProjectSlotName == LegacyAutosaveSlotName)
+        {
+            ActiveProjectSlotName.Reset();
+        }
+        RefreshProjectBrowser();
+        UpdateRecoveryState();
         bPreferencesReady = true;
         HandleSettingsChanged(Session->GetSettings());
     }
@@ -33,6 +78,11 @@ void UCharacterCreatorSubsystem::Initialize(FSubsystemCollectionBase& Collection
 
 void UCharacterCreatorSubsystem::Deinitialize()
 {
+    if (ActiveImportCancellation.IsValid())
+    {
+        ActiveImportCancellation->Store(true);
+        ActiveImportCancellation.Reset();
+    }
     if (bAutosavePending && Session)
     {
         SaveAutosave();
@@ -41,6 +91,7 @@ void UCharacterCreatorSubsystem::Deinitialize()
     if (UWorld* World = GetWorld())
     {
         World->GetTimerManager().ClearTimer(AutosaveTimerHandle);
+        World->GetTimerManager().ClearTimer(ExportTimerHandle);
     }
 
     if (Session)
@@ -56,17 +107,47 @@ void UCharacterCreatorSubsystem::Deinitialize()
 
 bool UCharacterCreatorSubsystem::SaveToSlot(const FString& SlotName)
 {
-    if (!Session || SlotName.IsEmpty())
+    return SaveToSlotInternal(SlotName, Session ? Session->GetSettings().ProjectName : FString(), false, true);
+}
+
+bool UCharacterCreatorSubsystem::SaveCurrentProject()
+{
+    if (!Session)
+    {
+        return false;
+    }
+    if (ActiveProjectSlotName.IsEmpty())
+    {
+        return SaveCurrentProjectAs(Session->GetSettings().ProjectName);
+    }
+    return SaveToSlotInternal(ActiveProjectSlotName, Session->GetSettings().ProjectName, false, true);
+}
+
+bool UCharacterCreatorSubsystem::SaveCurrentProjectAs(const FString& DisplayName)
+{
+    if (!Session || DisplayName.TrimStartAndEnd().IsEmpty())
+    {
+        if (Session) Session->SetStatusMessage(FText::FromString(TEXT("Enter a project name before saving.")));
+        return false;
+    }
+    const FString CleanName = DisplayName.TrimStartAndEnd();
+    return SaveToSlotInternal(MakeUniqueProjectSlot(CleanName), CleanName, false, true);
+}
+
+bool UCharacterCreatorSubsystem::SaveToSlotInternal(const FString& SlotName, const FString& DisplayName, bool bAutosave, bool bSetActiveProject)
+{
+    if (!Session || !IsSafeCharacterCreatorSlot(SlotName))
     {
         return false;
     }
 
-    if (Session->GetSettings().bCreateBackups && UGameplayStatics::DoesSaveGameExist(SlotName, 0))
+    if (!bAutosave && Session->GetSettings().bCreateBackups && UGameplayStatics::DoesSaveGameExist(SlotName, 0))
     {
         if (UCharacterCreatorSaveGame* ExistingSave = Cast<UCharacterCreatorSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0)))
         {
-            const FString BackupSlot = FString::Printf(TEXT("%s_Backup_%s"), *SlotName, *FDateTime::UtcNow().ToString(TEXT("%Y%m%d%H%M%S")));
+            const FString BackupSlot = FString::Printf(TEXT("%s_Backup_%s_%03d"), *SlotName, *FDateTime::UtcNow().ToString(TEXT("%Y%m%d%H%M%S")), FMath::RandRange(0, 999));
             UGameplayStatics::SaveGameToSlot(ExistingSave, BackupSlot, 0);
+            PruneBackups(SlotName);
         }
     }
 
@@ -98,22 +179,47 @@ bool UCharacterCreatorSubsystem::SaveToSlot(const FString& SlotName)
         ExistingProject = &Browser.Projects.AddDefaulted_GetRef();
         ExistingProject->SlotName = SlotName;
     }
-    ExistingProject->DisplayName = FText::FromString(Session->GetSettings().ProjectName);
+    ExistingProject->DisplayName = FText::FromString(DisplayName.IsEmpty() ? Session->GetSettings().ProjectName : DisplayName);
     ExistingProject->LastModifiedUtc = SaveGame->LastSavedUtc;
     ExistingProject->AssetCount = Session->GetAppearanceStateNative().AssetBrowser.Entries.Num();
-    ExistingProject->bAutosave = SlotName == AutosaveSlotName;
+    ExistingProject->bAutosave = bAutosave;
     ExistingProject->bHasUnsavedChanges = false;
-    Browser.SelectedSlotName = SlotName;
+    ExistingProject->BackupCount = PruneBackups(bAutosave ? ActiveProjectSlotName : SlotName);
+    if (bSetActiveProject)
+    {
+        Browser.SelectedSlotName = SlotName;
+        Browser.ActiveSlotName = SlotName;
+    }
     SaveGame->ProjectBrowser = Browser;
-    Session->SetProjectBrowserState(Browser);
 
     const bool bSaved = UGameplayStatics::SaveGameToSlot(SaveGame, SlotName, 0);
     if (bSaved)
     {
-        SaveProjectCatalog();
-        Session->ApplyAppearanceChanges();
-        Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Saved character to %s"), *SlotName)));
+        if (bSetActiveProject)
+        {
+            ActiveProjectSlotName = SlotName;
+            FCharacterCreatorSettings Settings = Session->GetSettings();
+            Settings.ProjectName = ExistingProject->DisplayName.ToString();
+            Session->SetSettings(Settings);
+            Session->ApplyAppearanceChanges();
+        }
+        const FString SavedDisplayName = ExistingProject->DisplayName.ToString();
+        if (!bAutosave)
+        {
+            Browser.Projects.RemoveAll([](const FCharacterCreatorProjectRecord& Project) { return Project.bAutosave; });
+            Session->SetProjectBrowserState(Browser);
+            SaveProjectCatalog();
+        }
+        const FString SaveMessage = bAutosave
+            ? FString::Printf(TEXT("Autosaved recovery snapshot for %s"), *SavedDisplayName)
+            : FString::Printf(TEXT("Saved project %s"), *SavedDisplayName);
+        Session->SetStatusMessage(FText::FromString(SaveMessage));
         bAutosavePending = false;
+        if (!bAutosave)
+        {
+            UGameplayStatics::DeleteGameInSlot(GetAutosaveSlotName(), 0);
+        }
+        UpdateRecoveryState();
     }
     else
     {
@@ -125,10 +231,12 @@ bool UCharacterCreatorSubsystem::SaveToSlot(const FString& SlotName)
 
 bool UCharacterCreatorSubsystem::LoadFromSlot(const FString& SlotName)
 {
-    if (!Session || SlotName.IsEmpty() || !UGameplayStatics::DoesSaveGameExist(SlotName, 0))
-    {
-        return false;
-    }
+    return LoadFromSlotInternal(SlotName, false);
+}
+
+bool UCharacterCreatorSubsystem::LoadFromSlotInternal(const FString& SlotName, bool bRecoveredAutosave)
+{
+    if (!Session || !IsSafeCharacterCreatorSlot(SlotName) || !UGameplayStatics::DoesSaveGameExist(SlotName, 0)) return false;
 
     UCharacterCreatorSaveGame* SaveGame = Cast<UCharacterCreatorSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0));
     if (!SaveGame || !SaveGame->IsCompatible())
@@ -141,9 +249,28 @@ bool UCharacterCreatorSubsystem::LoadFromSlot(const FString& SlotName)
     Session->SetAppearanceState(SaveGame->Appearance, false);
     Session->SetOnboardingState(SaveGame->Onboarding);
     Session->SetSettings(SaveGame->Settings);
-    Session->SetProjectBrowserState(SaveGame->ProjectBrowser);
+    FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
+    if (!bRecoveredAutosave && SaveGame->ProjectBrowser.Projects.Num() > 0)
+    {
+        Browser = SaveGame->ProjectBrowser;
+    }
+    ActiveProjectSlotName = bRecoveredAutosave ? ActiveProjectSlotName : SlotName;
+    Browser.ActiveSlotName = ActiveProjectSlotName;
+    Browser.SelectedSlotName = ActiveProjectSlotName;
+    Browser.bUnsavedConfirmationRequired = false;
+    Browser.PendingSlotName.Reset();
+    Session->SetProjectBrowserState(Browser);
     Session->SetExportHistory(SaveGame->ExportHistory);
-    Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Loaded character from %s"), *SlotName)));
+    if (bRecoveredAutosave)
+    {
+        FCharacterAppearanceState RecoveredAppearance = Session->GetAppearanceStateNative();
+        RecoveredAppearance.bHasUnsavedChanges = true;
+        Session->SetAppearanceState(RecoveredAppearance, true);
+    }
+    const FString LoadMessage = bRecoveredAutosave
+        ? FString::Printf(TEXT("Recovered autosave for %s; save to keep it"), *Session->GetSettings().ProjectName)
+        : FString::Printf(TEXT("Loaded project %s"), *Session->GetSettings().ProjectName);
+    Session->SetStatusMessage(FText::FromString(LoadMessage));
     bAutosavePending = false;
     return true;
 }
@@ -155,12 +282,204 @@ bool UCharacterCreatorSubsystem::DoesSaveExist(const FString& SlotName) const
 
 bool UCharacterCreatorSubsystem::SaveAutosave()
 {
-    return SaveToSlot(AutosaveSlotName);
+    return Session && Session->HasUnsavedChanges()
+        ? SaveToSlotInternal(GetAutosaveSlotName(), Session->GetSettings().ProjectName, true, false)
+        : false;
 }
 
 bool UCharacterCreatorSubsystem::LoadAutosave()
 {
-    return LoadFromSlot(AutosaveSlotName);
+    return RecoverAutosave();
+}
+
+bool UCharacterCreatorSubsystem::CreateProject(const FString& DisplayName)
+{
+    const FString CleanName = DisplayName.TrimStartAndEnd();
+    if (!Session || CleanName.IsEmpty())
+    {
+        if (Session) Session->SetStatusMessage(FText::FromString(TEXT("Enter a name for the new project.")));
+        return false;
+    }
+    if (Session->HasUnsavedChanges())
+    {
+        return StartPendingProjectChange(FString(), CleanName);
+    }
+
+    Session->ResetAppearance();
+    FCharacterCreatorSettings Settings = Session->GetSettings();
+    Settings.ProjectName = CleanName;
+    Session->SetSettings(Settings);
+    ActiveProjectSlotName.Reset();
+    return SaveCurrentProjectAs(CleanName);
+}
+
+bool UCharacterCreatorSubsystem::RenameProject(const FString& SlotName, const FString& NewDisplayName)
+{
+    const FString CleanName = NewDisplayName.TrimStartAndEnd();
+    if (!Session || !IsSafeCharacterCreatorSlot(SlotName) || !IsCataloguedProject(Session->GetProjectBrowserState(), SlotName) || CleanName.IsEmpty() || !UGameplayStatics::DoesSaveGameExist(SlotName, 0))
+    {
+        if (Session) Session->SetStatusMessage(FText::FromString(TEXT("Select a saved project and enter a new name.")));
+        return false;
+    }
+
+    UCharacterCreatorSaveGame* SaveGame = Cast<UCharacterCreatorSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0));
+    if (!SaveGame || !SaveGame->IsCompatible()) return false;
+    SaveGame->Settings.ProjectName = CleanName;
+    SaveGame->LastSavedUtc = FDateTime::UtcNow();
+    FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
+    if (FCharacterCreatorProjectRecord* Project = Browser.Projects.FindByPredicate([&SlotName](const FCharacterCreatorProjectRecord& Item) { return Item.SlotName == SlotName; }))
+    {
+        Project->DisplayName = FText::FromString(CleanName);
+        Project->LastModifiedUtc = SaveGame->LastSavedUtc;
+    }
+    SaveGame->ProjectBrowser = Browser;
+    if (!UGameplayStatics::SaveGameToSlot(SaveGame, SlotName, 0)) return false;
+    if (SlotName == ActiveProjectSlotName)
+    {
+        FCharacterCreatorSettings Settings = Session->GetSettings();
+        Settings.ProjectName = CleanName;
+        Session->SetSettings(Settings);
+    }
+    Session->SetProjectBrowserState(Browser);
+    SaveProjectCatalog();
+    Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Renamed project to %s"), *CleanName)));
+    return true;
+}
+
+bool UCharacterCreatorSubsystem::DuplicateProject(const FString& SlotName, const FString& NewDisplayName)
+{
+    const FString CleanName = NewDisplayName.TrimStartAndEnd();
+    if (!Session || !IsSafeCharacterCreatorSlot(SlotName) || !IsCataloguedProject(Session->GetProjectBrowserState(), SlotName) || CleanName.IsEmpty() || !UGameplayStatics::DoesSaveGameExist(SlotName, 0)) return false;
+    UCharacterCreatorSaveGame* SourceSave = Cast<UCharacterCreatorSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0));
+    if (!SourceSave || !SourceSave->IsCompatible()) return false;
+
+    const FString NewSlot = MakeUniqueProjectSlot(CleanName);
+    SourceSave->SlotName = NewSlot;
+    SourceSave->LastSavedUtc = FDateTime::UtcNow();
+    SourceSave->Settings.ProjectName = CleanName;
+    FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
+    FCharacterCreatorProjectRecord& Duplicate = Browser.Projects.AddDefaulted_GetRef();
+    Duplicate.SlotName = NewSlot;
+    Duplicate.DisplayName = FText::FromString(CleanName);
+    Duplicate.LastModifiedUtc = SourceSave->LastSavedUtc;
+    Duplicate.AssetCount = SourceSave->Appearance.AssetBrowser.Entries.Num();
+    SourceSave->ProjectBrowser = Browser;
+    if (!UGameplayStatics::SaveGameToSlot(SourceSave, NewSlot, 0))
+    {
+        Browser.Projects.RemoveAll([&NewSlot](const FCharacterCreatorProjectRecord& Item) { return Item.SlotName == NewSlot; });
+        return false;
+    }
+    Session->SetProjectBrowserState(Browser);
+    SaveProjectCatalog();
+    Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Duplicated project as %s"), *CleanName)));
+    return true;
+}
+
+bool UCharacterCreatorSubsystem::DeleteProject(const FString& SlotName)
+{
+    if (!Session || !IsSafeCharacterCreatorSlot(SlotName) || !IsCataloguedProject(Session->GetProjectBrowserState(), SlotName)) return false;
+    const bool bDeleted = !UGameplayStatics::DoesSaveGameExist(SlotName, 0) || UGameplayStatics::DeleteGameInSlot(SlotName, 0);
+    if (!bDeleted) return false;
+
+    UGameplayStatics::DeleteGameInSlot(SlotName + TEXT("_Autosave"), 0);
+    const FString SaveDirectory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames"));
+    TArray<FString> BackupFiles;
+    IFileManager::Get().FindFiles(BackupFiles, *FPaths::Combine(SaveDirectory, SlotName + TEXT("_Backup_*.sav")), true, false);
+    for (const FString& BackupFile : BackupFiles)
+    {
+        IFileManager::Get().Delete(*FPaths::Combine(SaveDirectory, BackupFile), false, true);
+    }
+
+    FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
+    Browser.Projects.RemoveAll([&SlotName](const FCharacterCreatorProjectRecord& Item) { return Item.SlotName == SlotName; });
+    if (ActiveProjectSlotName == SlotName)
+    {
+        ActiveProjectSlotName.Reset();
+        Browser.ActiveSlotName.Reset();
+        Browser.SelectedSlotName = Browser.Projects.Num() > 0 ? Browser.Projects[0].SlotName : FString();
+        Session->ResetAppearance();
+    }
+    else if (Browser.SelectedSlotName == SlotName)
+    {
+        Browser.SelectedSlotName = Browser.ActiveSlotName;
+    }
+    Session->SetProjectBrowserState(Browser);
+    SaveProjectCatalog();
+    Session->SetStatusMessage(FText::FromString(TEXT("Project deleted")));
+    return true;
+}
+
+bool UCharacterCreatorSubsystem::StartPendingProjectChange(const FString& TargetSlotName, const FString& NewProjectName)
+{
+    if (!Session) return false;
+    PendingProjectSlotName = TargetSlotName;
+    PendingNewProjectName = NewProjectName;
+    bPendingProjectChange = true;
+    FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
+    Browser.PendingSlotName = TargetSlotName;
+    Browser.bUnsavedConfirmationRequired = true;
+    Session->SetProjectBrowserState(Browser);
+    Session->SetStatusMessage(FText::FromString(TEXT("Unsaved changes: choose Save, Discard, or Cancel before switching projects.")));
+    return false;
+}
+
+bool UCharacterCreatorSubsystem::ResolvePendingProjectChange(ECharacterCreatorUnsavedDecision Decision)
+{
+    if (!Session || !bPendingProjectChange) return false;
+    if (Decision == ECharacterCreatorUnsavedDecision::Cancel)
+    {
+        PendingProjectSlotName.Reset();
+        PendingNewProjectName.Reset();
+        bPendingProjectChange = false;
+        FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
+        Browser.PendingSlotName.Reset();
+        Browser.bUnsavedConfirmationRequired = false;
+        Session->SetProjectBrowserState(Browser);
+        Session->SetStatusMessage(FText::FromString(TEXT("Project switch cancelled")));
+        return true;
+    }
+    if (Decision == ECharacterCreatorUnsavedDecision::Save && !SaveCurrentProject()) return false;
+    return CompletePendingProjectChange();
+}
+
+bool UCharacterCreatorSubsystem::CompletePendingProjectChange()
+{
+    const FString TargetSlot = PendingProjectSlotName;
+    const FString NewName = PendingNewProjectName;
+    PendingProjectSlotName.Reset();
+    PendingNewProjectName.Reset();
+    bPendingProjectChange = false;
+    FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
+    Browser.PendingSlotName.Reset();
+    Browser.bUnsavedConfirmationRequired = false;
+    Session->SetProjectBrowserState(Browser);
+    if (!NewName.IsEmpty())
+    {
+        Session->ResetAppearance();
+        FCharacterCreatorSettings Settings = Session->GetSettings();
+        Settings.ProjectName = NewName;
+        Session->SetSettings(Settings);
+        ActiveProjectSlotName.Reset();
+        return SaveCurrentProjectAs(NewName);
+    }
+    return LoadFromSlotInternal(TargetSlot, false);
+}
+
+bool UCharacterCreatorSubsystem::RecoverAutosave()
+{
+    const FString AutosaveSlot = GetAutosaveSlotName();
+    if (!Session || !UGameplayStatics::DoesSaveGameExist(AutosaveSlot, 0)) return false;
+    bRecoveryDismissed = true;
+    const bool bRecovered = LoadFromSlotInternal(AutosaveSlot, true);
+    UpdateRecoveryState();
+    return bRecovered;
+}
+
+void UCharacterCreatorSubsystem::DismissAutosaveRecovery()
+{
+    bRecoveryDismissed = true;
+    UpdateRecoveryState();
+    if (Session) Session->SetStatusMessage(FText::FromString(TEXT("Autosave recovery dismissed; the snapshot is retained until the next manual save.")));
 }
 
 bool UCharacterCreatorSubsystem::ValidateCurrentAppearance(TArray<FCharacterCreatorValidationIssue>& OutIssues) const
@@ -288,9 +607,19 @@ bool UCharacterCreatorSubsystem::ExportCurrentManifest(const FCharacterCreatorEx
         return false;
     }
 
-    const FString OutputPath = DestinationPath.IsEmpty()
-        ? FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Exports"), TEXT("ActiveCharacter.json"))
-        : DestinationPath;
+    FString OutputPath = DestinationPath;
+    if (OutputPath.IsEmpty())
+    {
+        OutputPath = Session->GetSettings().ExportDestinationDirectory;
+    }
+    if (OutputPath.IsEmpty())
+    {
+        OutputPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Exports"));
+    }
+    if (FPaths::GetExtension(OutputPath).IsEmpty())
+    {
+        OutputPath = FPaths::Combine(OutputPath, TEXT("ActiveCharacter.json"));
+    }
     const FString OutputDirectory = FPaths::GetPath(OutputPath);
     if (!OutputDirectory.IsEmpty())
     {
@@ -321,8 +650,18 @@ bool UCharacterCreatorSubsystem::ExportCurrentDeliverables(const FCharacterCreat
     {
         Session->SetStatusMessage(FText::FromString(TEXT("Select at least one deliverable before exporting")));
         AddExportHistory(false, DestinationDirectory, Deliverables, FText::FromString(TEXT("No deliverables selected")));
+        ExportProgress.State = ECharacterCreatorOperationState::Failed;
+        ExportProgress.Progress = 1.0f;
+        ExportProgress.Stage = FText::FromString(TEXT("No deliverables selected"));
         return false;
     }
+
+    ExportProgress.State = ECharacterCreatorOperationState::Running;
+    ExportProgress.Progress = 0.15f;
+    ExportProgress.Stage = FText::FromString(TEXT("Validating character and dependencies"));
+    ExportProgress.Requested = Deliverables;
+    ExportProgress.Succeeded.Reset();
+    ExportProgress.Failed.Reset();
 
     TArray<FCharacterCreatorValidationIssue> Issues;
     FCharacterCreatorExportService::ValidateAppearance(Session->GetAppearanceStateNative(), Profile, Issues);
@@ -336,50 +675,148 @@ bool UCharacterCreatorSubsystem::ExportCurrentDeliverables(const FCharacterCreat
         const FText Message = FirstError ? FirstError->Remediation : FText::FromString(TEXT("Export validation failed"));
         Session->SetStatusMessage(Message);
         AddExportHistory(false, DestinationDirectory, Deliverables, Message);
+        ExportProgress.State = ECharacterCreatorOperationState::Failed;
+        ExportProgress.Progress = 1.0f;
+        ExportProgress.Stage = Message;
+        ExportProgress.Failed = Deliverables;
         return false;
     }
 
-    const FString OutputDirectory = DestinationDirectory.IsEmpty()
-        ? FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Exports"))
-        : DestinationDirectory;
+    FString OutputDirectory = DestinationDirectory.IsEmpty() ? Session->GetSettings().ExportDestinationDirectory : DestinationDirectory;
+    if (OutputDirectory.IsEmpty()) OutputDirectory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Exports"));
     IFileManager::Get().MakeDirectory(*OutputDirectory, true);
     const FCharacterAppearanceState Appearance = Session->GetAppearanceStateNative();
     const FCharacterPreset Preset = Session->GetActivePreset();
-    bool bWritten = true;
-
-    auto WriteManifest = [&bWritten, &OutputDirectory](const FString& Filename, const FString& Content)
-    {
-        bWritten = bWritten && FFileHelper::SaveStringToFile(Content, *FPaths::Combine(OutputDirectory, Filename));
-    };
+    TArray<ECharacterCreatorDeliverable> SucceededDeliverables;
+    TArray<ECharacterCreatorDeliverable> FailedDeliverables;
 
     if (Profile.bIncludeMetadata)
     {
+        ExportProgress.Progress = 0.35f;
+        ExportProgress.Stage = FText::FromString(TEXT("Writing metadata manifest"));
         FString ManifestJson;
-        bWritten = FCharacterCreatorExportService::BuildManifestJson(Appearance, Preset, Profile, ManifestJson);
-        if (bWritten) WriteManifest(TEXT("ActiveCharacter.json"), ManifestJson);
+        const bool bManifestWritten = FCharacterCreatorExportService::BuildManifestJson(Appearance, Preset, Profile, ManifestJson)
+            && FFileHelper::SaveStringToFile(ManifestJson, *FPaths::Combine(OutputDirectory, TEXT("ActiveCharacter.json")));
+        (bManifestWritten ? SucceededDeliverables : FailedDeliverables).Add(ECharacterCreatorDeliverable::Manifest);
     }
 
-    if (bWritten && (Profile.bGenerateBlueprint || Profile.bGenerateDataAsset || Profile.bGeneratePackage))
+    TArray<ECharacterCreatorDeliverable> RequestedRealDeliverables;
+    if (Profile.bGenerateBlueprint) RequestedRealDeliverables.Add(ECharacterCreatorDeliverable::Blueprint);
+    if (Profile.bGenerateDataAsset) RequestedRealDeliverables.Add(ECharacterCreatorDeliverable::DataAsset);
+    if (Profile.bGeneratePackage) RequestedRealDeliverables.Add(ECharacterCreatorDeliverable::Package);
+    if (RequestedRealDeliverables.Num() > 0)
     {
+        ExportProgress.Progress = 0.65f;
+        ExportProgress.Stage = FText::FromString(TEXT("Generating Unreal assets and staged packages"));
+        bool bRealWritten = false;
 #if WITH_EDITOR
         FCharacterCreatorRealExportResult RealExport;
-        bWritten = FCharacterCreatorEditorExportService::GenerateDeliverables(Appearance, Preset, Profile, OutputDirectory, RealExport);
-        if (!bWritten && !RealExport.ErrorMessage.IsEmpty())
+        bRealWritten = FCharacterCreatorEditorExportService::GenerateDeliverables(Appearance, Preset, Profile, OutputDirectory, RealExport);
+        if (!bRealWritten && !RealExport.ErrorMessage.IsEmpty())
         {
             Session->SetStatusMessage(FText::FromString(RealExport.ErrorMessage));
         }
 #else
-        bWritten = false;
         Session->SetStatusMessage(FText::FromString(TEXT("Real Unreal deliverables require an editor export run.")));
 #endif
+        (bRealWritten ? SucceededDeliverables : FailedDeliverables).Append(RequestedRealDeliverables);
     }
 
-    const FText Summary = bWritten
-        ? FText::FromString(FString::Printf(TEXT("Export complete • %d real deliverables written"), Deliverables.Num()))
-        : FText::FromString(TEXT("Export failed while generating a real Unreal deliverable"));
+    const bool bWritten = FailedDeliverables.Num() == 0 && SucceededDeliverables.Num() == Deliverables.Num();
+    const FString SummaryString = bWritten
+        ? FString::Printf(TEXT("Export complete • %d deliverables written"), SucceededDeliverables.Num())
+        : SucceededDeliverables.Num() > 0
+            ? FString::Printf(TEXT("Export partially complete • %d written • %d failed"), SucceededDeliverables.Num(), FailedDeliverables.Num())
+            : FString::Printf(TEXT("Export failed • %d written • %d failed"), SucceededDeliverables.Num(), FailedDeliverables.Num());
+    const FText Summary = FText::FromString(SummaryString);
     Session->SetStatusMessage(Summary);
-    AddExportHistory(bWritten, OutputDirectory, Deliverables, Summary);
+    AddExportHistoryDetailed(OutputDirectory, Deliverables, SucceededDeliverables, FailedDeliverables, Summary);
+    ExportProgress.Progress = 1.0f;
+    ExportProgress.Succeeded = SucceededDeliverables;
+    ExportProgress.Failed = FailedDeliverables;
+    ExportProgress.State = bWritten ? ECharacterCreatorOperationState::Completed : SucceededDeliverables.Num() > 0 ? ECharacterCreatorOperationState::CompletedWithErrors : ECharacterCreatorOperationState::Failed;
+    ExportProgress.Stage = Summary;
     return bWritten;
+}
+
+bool UCharacterCreatorSubsystem::StartExportCurrentDeliverables(const FCharacterCreatorExportProfile& Profile, const FString& DestinationDirectory)
+{
+    if (!Session || ExportProgress.State == ECharacterCreatorOperationState::Queued || ExportProgress.State == ECharacterCreatorOperationState::Running)
+    {
+        if (Session) Session->SetStatusMessage(FText::FromString(TEXT("An export operation is already running.")));
+        return false;
+    }
+
+    ExportProgress = FCharacterCreatorExportProgress();
+    if (Profile.bIncludeMetadata) ExportProgress.Requested.Add(ECharacterCreatorDeliverable::Manifest);
+    if (Profile.bGenerateBlueprint) ExportProgress.Requested.Add(ECharacterCreatorDeliverable::Blueprint);
+    if (Profile.bGenerateDataAsset) ExportProgress.Requested.Add(ECharacterCreatorDeliverable::DataAsset);
+    if (Profile.bGeneratePackage) ExportProgress.Requested.Add(ECharacterCreatorDeliverable::Package);
+    if (ExportProgress.Requested.Num() == 0)
+    {
+        ExportProgress.State = ECharacterCreatorOperationState::Failed;
+        ExportProgress.Progress = 1.0f;
+        ExportProgress.Stage = FText::FromString(TEXT("No deliverables selected"));
+        Session->SetStatusMessage(ExportProgress.Stage);
+        return false;
+    }
+
+    TArray<FCharacterCreatorValidationIssue> Issues;
+    FCharacterCreatorExportService::ValidateAppearance(Session->GetAppearanceStateNative(), Profile, Issues);
+    if (FCharacterCreatorExportService::HasErrors(Issues))
+    {
+        ExportProgress.State = ECharacterCreatorOperationState::Failed;
+        ExportProgress.Progress = 1.0f;
+        ExportProgress.Failed = ExportProgress.Requested;
+        ExportProgress.Stage = FText::FromString(TEXT("Export validation failed"));
+        Session->SetStatusMessage(ExportProgress.Stage);
+        return false;
+    }
+
+    QueuedExportProfile = Profile;
+    QueuedExportDestination = DestinationDirectory;
+    bExportCancellationRequested = false;
+    ExportProgress.State = ECharacterCreatorOperationState::Queued;
+    ExportProgress.Progress = 0.05f;
+    ExportProgress.Stage = FText::FromString(TEXT("Export queued; cancellation is available before generation starts"));
+    Session->SetStatusMessage(ExportProgress.Stage);
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(ExportTimerHandle, this, &UCharacterCreatorSubsystem::HandleQueuedExport, 0.5f, false);
+        return true;
+    }
+    HandleQueuedExport();
+    return ExportProgress.State == ECharacterCreatorOperationState::Completed;
+}
+
+bool UCharacterCreatorSubsystem::CancelExport()
+{
+    if (ExportProgress.State == ECharacterCreatorOperationState::Running)
+    {
+        if (Session) Session->SetStatusMessage(FText::FromString(TEXT("The atomic Unreal asset-save phase is already running and cannot be cancelled safely.")));
+        return false;
+    }
+    if (ExportProgress.State != ECharacterCreatorOperationState::Queued) return false;
+    bExportCancellationRequested = true;
+    if (Session) Session->SetStatusMessage(FText::FromString(TEXT("Export cancellation requested before generation starts.")));
+    return true;
+}
+
+void UCharacterCreatorSubsystem::HandleQueuedExport()
+{
+    if (!Session) return;
+    if (bExportCancellationRequested)
+    {
+        ExportProgress.State = ECharacterCreatorOperationState::Cancelled;
+        ExportProgress.Progress = 1.0f;
+        ExportProgress.Failed = ExportProgress.Requested;
+        ExportProgress.Stage = FText::FromString(TEXT("Export cancelled before generation"));
+        Session->SetStatusMessage(ExportProgress.Stage);
+        bExportCancellationRequested = false;
+        return;
+    }
+    ExportCurrentDeliverables(QueuedExportProfile, QueuedExportDestination);
+    bExportCancellationRequested = false;
 }
 
 TArray<FCharacterCreatorExportHistoryEntry> UCharacterCreatorSubsystem::GetExportHistory() const
@@ -398,6 +835,23 @@ void UCharacterCreatorSubsystem::AddExportHistory(bool bSucceeded, const FString
     Entry.DestinationDirectory = DestinationDirectory;
     Entry.Deliverables = Deliverables;
     Entry.bSucceeded = bSucceeded;
+    Entry.SuccessfulDeliverables = bSucceeded ? Deliverables : TArray<ECharacterCreatorDeliverable>();
+    Entry.FailedDeliverables = bSucceeded ? TArray<ECharacterCreatorDeliverable>() : Deliverables;
+    Entry.Summary = Summary;
+    Session->AddExportHistoryEntry(Entry);
+}
+
+void UCharacterCreatorSubsystem::AddExportHistoryDetailed(const FString& DestinationDirectory, const TArray<ECharacterCreatorDeliverable>& Requested, const TArray<ECharacterCreatorDeliverable>& Succeeded, const TArray<ECharacterCreatorDeliverable>& Failed, const FText& Summary)
+{
+    if (!Session) return;
+    FCharacterCreatorExportHistoryEntry Entry;
+    Entry.TimestampUtc = FDateTime::UtcNow();
+    Entry.DestinationDirectory = DestinationDirectory;
+    Entry.Deliverables = Requested;
+    Entry.SuccessfulDeliverables = Succeeded;
+    Entry.FailedDeliverables = Failed;
+    Entry.bSucceeded = Failed.Num() == 0 && Succeeded.Num() == Requested.Num();
+    Entry.bPartialSuccess = Succeeded.Num() > 0 && Failed.Num() > 0;
     Entry.Summary = Summary;
     Session->AddExportHistoryEntry(Entry);
 }
@@ -478,31 +932,126 @@ bool UCharacterCreatorSubsystem::RefreshProjectBrowser()
     }
     FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
     Browser.bLoading = false;
-    if (Browser.Projects.Num() == 0)
+    Browser.Projects.RemoveAll([this](const FCharacterCreatorProjectRecord& Project)
     {
-        FCharacterCreatorProjectRecord DefaultProject;
-        DefaultProject.SlotName = AutosaveSlotName;
-        DefaultProject.DisplayName = FText::FromString(Session->GetSettings().ProjectName);
-        DefaultProject.LastModifiedUtc = FDateTime::UtcNow();
-        DefaultProject.bAutosave = true;
-        Browser.Projects.Add(DefaultProject);
+        return Project.bAutosave || Project.SlotName.IsEmpty() || !UGameplayStatics::DoesSaveGameExist(Project.SlotName, 0);
+    });
+
+    const FString SaveDirectory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames"));
+    TArray<FString> SaveFiles;
+    IFileManager::Get().FindFiles(SaveFiles, *FPaths::Combine(SaveDirectory, TEXT("CharacterCreator_Project_*.sav")), true, false);
+    for (const FString& SaveFile : SaveFiles)
+    {
+        const FString SlotName = FPaths::GetBaseFilename(SaveFile);
+        if (SlotName.Contains(TEXT("_Backup_")) || SlotName.EndsWith(TEXT("_Autosave"))) continue;
+        if (Browser.Projects.ContainsByPredicate([&SlotName](const FCharacterCreatorProjectRecord& Project) { return Project.SlotName == SlotName; })) continue;
+        if (UCharacterCreatorSaveGame* Save = Cast<UCharacterCreatorSaveGame>(UGameplayStatics::LoadGameFromSlot(SlotName, 0)))
+        {
+            if (!Save->IsCompatible()) continue;
+            FCharacterCreatorProjectRecord& Project = Browser.Projects.AddDefaulted_GetRef();
+            Project.SlotName = SlotName;
+            Project.DisplayName = FText::FromString(Save->Settings.ProjectName.IsEmpty() ? SlotName : Save->Settings.ProjectName);
+            Project.LastModifiedUtc = Save->LastSavedUtc;
+            Project.AssetCount = Save->Appearance.AssetBrowser.Entries.Num();
+            Project.BackupCount = PruneBackups(SlotName);
+        }
     }
+    Browser.Projects.Sort([](const FCharacterCreatorProjectRecord& A, const FCharacterCreatorProjectRecord& B)
+    {
+        return A.LastModifiedUtc > B.LastModifiedUtc;
+    });
     if (Browser.SelectedSlotName.IsEmpty())
     {
-        Browser.SelectedSlotName = Browser.Projects[0].SlotName;
+        Browser.SelectedSlotName = !ActiveProjectSlotName.IsEmpty() ? ActiveProjectSlotName : Browser.Projects.Num() > 0 ? Browser.Projects[0].SlotName : FString();
     }
+    Browser.ActiveSlotName = ActiveProjectSlotName;
     Session->SetProjectBrowserState(Browser);
+    UpdateRecoveryState();
     return true;
 }
 
 bool UCharacterCreatorSubsystem::SelectProject(const FString& SlotName)
 {
-    if (!Session || SlotName.IsEmpty())
+    if (!Session || !IsSafeCharacterCreatorSlot(SlotName) || !IsCataloguedProject(Session->GetProjectBrowserState(), SlotName))
     {
         return false;
     }
+    if (SlotName == ActiveProjectSlotName) return true;
+    if (Session->HasUnsavedChanges()) return StartPendingProjectChange(SlotName, FString());
     Session->SelectProject(SlotName);
-    return LoadFromSlot(SlotName);
+    return LoadFromSlotInternal(SlotName, false);
+}
+
+FString UCharacterCreatorSubsystem::MakeUniqueProjectSlot(const FString& DisplayName) const
+{
+    FString Slug;
+    bool bPreviousUnderscore = false;
+    for (const TCHAR Character : DisplayName)
+    {
+        if (FChar::IsAlnum(Character))
+        {
+            Slug.AppendChar(Character);
+            bPreviousUnderscore = false;
+        }
+        else if (!bPreviousUnderscore && !Slug.IsEmpty())
+        {
+            Slug.AppendChar(TEXT('_'));
+            bPreviousUnderscore = true;
+        }
+    }
+    Slug.RemoveFromEnd(TEXT("_"));
+    if (Slug.IsEmpty()) Slug = TEXT("Project");
+    FString Candidate = TEXT("CharacterCreator_Project_") + Slug.Left(64);
+    int32 Suffix = 2;
+    while (UGameplayStatics::DoesSaveGameExist(Candidate, 0))
+    {
+        Candidate = FString::Printf(TEXT("CharacterCreator_Project_%s_%d"), *Slug.Left(56), Suffix++);
+    }
+    return Candidate;
+}
+
+FString UCharacterCreatorSubsystem::GetAutosaveSlotName() const
+{
+    return ActiveProjectSlotName.IsEmpty() ? LegacyAutosaveSlotName : ActiveProjectSlotName + TEXT("_Autosave");
+}
+
+int32 UCharacterCreatorSubsystem::PruneBackups(const FString& SlotName)
+{
+    if (!Session || SlotName.IsEmpty()) return 0;
+    const FString SaveDirectory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames"));
+    TArray<FString> BackupFiles;
+    IFileManager::Get().FindFiles(BackupFiles, *FPaths::Combine(SaveDirectory, SlotName + TEXT("_Backup_*.sav")), true, false);
+    BackupFiles.Sort();
+    const int32 RetainCount = Session->GetSettings().bCreateBackups ? Session->GetSettings().MaxBackupCount : 0;
+    while (BackupFiles.Num() > RetainCount)
+    {
+        const FString Oldest = BackupFiles[0];
+        IFileManager::Get().Delete(*FPaths::Combine(SaveDirectory, Oldest), false, true);
+        BackupFiles.RemoveAt(0);
+    }
+    return BackupFiles.Num();
+}
+
+void UCharacterCreatorSubsystem::UpdateRecoveryState()
+{
+    if (!Session) return;
+    FCharacterCreatorProjectBrowserState Browser = Session->GetProjectBrowserState();
+    const FString AutosaveSlot = GetAutosaveSlotName();
+    bool bAvailable = !bRecoveryDismissed && UGameplayStatics::DoesSaveGameExist(AutosaveSlot, 0);
+    if (bAvailable && !ActiveProjectSlotName.IsEmpty() && UGameplayStatics::DoesSaveGameExist(ActiveProjectSlotName, 0))
+    {
+        const UCharacterCreatorSaveGame* Autosave = Cast<UCharacterCreatorSaveGame>(UGameplayStatics::LoadGameFromSlot(AutosaveSlot, 0));
+        const UCharacterCreatorSaveGame* Manual = Cast<UCharacterCreatorSaveGame>(UGameplayStatics::LoadGameFromSlot(ActiveProjectSlotName, 0));
+        bAvailable = Autosave && Manual && Autosave->LastSavedUtc > Manual->LastSavedUtc;
+    }
+    Browser.bAutosaveRecoveryAvailable = bAvailable;
+    Browser.RecoverySlotName = bAvailable ? AutosaveSlot : FString();
+    for (FCharacterCreatorProjectRecord& Project : Browser.Projects)
+    {
+        Project.bRecoveryAvailable = bAvailable && Project.SlotName == ActiveProjectSlotName;
+        Project.BackupCount = PruneBackups(Project.SlotName);
+    }
+    Session->SetProjectBrowserState(Browser);
 }
 
 bool UCharacterCreatorSubsystem::ValidateImportDirectory(const FString& SourceDirectory, FCharacterCreatorImportProgress& OutProgress)
@@ -524,7 +1073,19 @@ bool UCharacterCreatorSubsystem::ScanAssetDirectory(const FString& SourceDirecto
     }
 
     TArray<FCharacterCreatorAssetCatalogEntry> Entries;
-    const bool bValid = FCharacterCreatorImportService::ScanDirectory(SourceDirectory, SearchQuery, CategoryFilter, Entries, OutProgress);
+    TSet<FString> FavoriteFiles;
+    for (const FCharacterCreatorAssetCatalogEntry& ExistingEntry : Session->GetAssetBrowserState().Entries)
+    {
+        if (ExistingEntry.bFavorite) FavoriteFiles.Add(ExistingEntry.SourceFile);
+    }
+    const bool bMountedPath = SourceDirectory.StartsWith(TEXT("/Game"));
+    const bool bValid = bMountedPath
+        ? FCharacterCreatorImportService::ScanMountedPath(SourceDirectory, SearchQuery, CategoryFilter, Entries, OutProgress)
+        : FCharacterCreatorImportService::ScanDirectory(SourceDirectory, SearchQuery, CategoryFilter, Entries, OutProgress);
+    for (FCharacterCreatorAssetCatalogEntry& Entry : Entries)
+    {
+        Entry.bFavorite = FavoriteFiles.Contains(Entry.SourceFile);
+    }
     FCharacterCreatorAssetBrowserState BrowserState = Session->GetAssetBrowserState();
     BrowserState.Entries = Entries;
     BrowserState.SearchQuery = SearchQuery;
@@ -553,6 +1114,81 @@ bool UCharacterCreatorSubsystem::ImportSelectedAssets(const FCharacterCreatorImp
     Session->SetImportProgress(OutProgress);
     Session->SetStatusMessage(OutProgress.Message);
     return bImported;
+}
+
+bool UCharacterCreatorSubsystem::StartImportSelectedAssets(const FCharacterCreatorImportOptions& Options)
+{
+    if (!Session || ActiveImportCancellation.IsValid())
+    {
+        if (Session) Session->SetStatusMessage(FText::FromString(TEXT("An import operation is already running.")));
+        return false;
+    }
+
+    const TArray<FCharacterCreatorAssetCatalogEntry> Entries = Session->GetAssetBrowserState().Entries;
+    if (!Entries.ContainsByPredicate([](const FCharacterCreatorAssetCatalogEntry& Entry) { return Entry.bSelected && Entry.Compatibility != ECharacterCreatorAssetCompatibility::Incompatible; }))
+    {
+        Session->SetStatusMessage(FText::FromString(TEXT("Select at least one compatible asset before importing.")));
+        return false;
+    }
+
+    ActiveImportCancellation = MakeShared<TAtomic<bool>, ESPMode::ThreadSafe>(false);
+    const TSharedPtr<TAtomic<bool>, ESPMode::ThreadSafe> Cancellation = ActiveImportCancellation;
+    TWeakObjectPtr<UCharacterCreatorSubsystem> WeakThis(this);
+    Async(EAsyncExecution::ThreadPool, [WeakThis, Cancellation, Entries, Options]()
+    {
+        FCharacterCreatorImportProgress FinalProgress;
+        const auto ProgressCallback = [WeakThis](const FCharacterCreatorImportProgress& Progress)
+        {
+            AsyncTask(ENamedThreads::GameThread, [WeakThis, Progress]()
+            {
+                if (UCharacterCreatorSubsystem* Subsystem = WeakThis.Get())
+                {
+                    if (Subsystem->Session)
+                    {
+                        Subsystem->Session->SetImportProgress(Progress);
+                        Subsystem->Session->SetStatusMessage(Progress.Message);
+                    }
+                }
+            });
+        };
+        FCharacterCreatorImportService::ImportAssets(
+            Entries,
+            Options,
+            FinalProgress,
+            ProgressCallback,
+            [Cancellation]() { return Cancellation->Load(); });
+        AsyncTask(ENamedThreads::GameThread, [WeakThis, FinalProgress]()
+        {
+            if (UCharacterCreatorSubsystem* Subsystem = WeakThis.Get())
+            {
+                Subsystem->ActiveImportCancellation.Reset();
+                if (Subsystem->Session)
+                {
+                    Subsystem->Session->SetImportProgress(FinalProgress);
+                    Subsystem->Session->SetStatusMessage(FinalProgress.Message);
+                }
+            }
+        });
+    });
+    return true;
+}
+
+bool UCharacterCreatorSubsystem::CancelImport()
+{
+    if (!ActiveImportCancellation.IsValid()) return false;
+    ActiveImportCancellation->Store(true);
+    if (Session) Session->SetStatusMessage(FText::FromString(TEXT("Cancelling import after the current file...")));
+    return true;
+}
+
+bool UCharacterCreatorSubsystem::OpenExportOutputFolder() const
+{
+    if (!Session) return false;
+    FString Directory = Session->GetSettings().ExportDestinationDirectory;
+    if (Directory.IsEmpty()) Directory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Exports"));
+    IFileManager::Get().MakeDirectory(*Directory, true);
+    FPlatformProcess::ExploreFolder(*Directory);
+    return IFileManager::Get().DirectoryExists(*Directory);
 }
 
 void UCharacterCreatorSubsystem::HandleAppearanceChanged(const FCharacterAppearanceState& NewAppearance)

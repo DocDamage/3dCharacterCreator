@@ -68,6 +68,11 @@ namespace
 void UCharacterCreatorWorkflowScreenWidget::InitializeWithSession(UCharacterCreatorSession* InSession)
 {
     Session = InSession;
+    if (WidgetTree && !bLayoutBuilt)
+    {
+        BuildLayout();
+        bLayoutBuilt = true;
+    }
 }
 
 void UCharacterCreatorWorkflowScreenWidget::InitializeWithPreviewActor(ACharacterCreatorPreviewActor* InPreviewActor)
