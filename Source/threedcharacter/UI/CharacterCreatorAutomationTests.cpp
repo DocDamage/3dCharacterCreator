@@ -123,6 +123,18 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
     Session->SetControllerHint(FName(TEXT("TestAction")), FText::FromString(TEXT("Test hint")));
     TestTrue(TEXT("Controller hints are persisted"), Session->GetControllerHintState().Hints.Contains(FName(TEXT("TestAction"))));
 
+    FCharacterCreatorSettings Settings = Session->GetSettings();
+    Settings.UIScale = 9.0f;
+    Settings.AutosaveIntervalSeconds = 1;
+    Settings.bHighContrast = true;
+    Session->SetSettings(Settings);
+    TestTrue(TEXT("Settings sanitize UI scale"), Session->GetSettings().UIScale <= 1.5f);
+    TestTrue(TEXT("Settings sanitize autosave interval"), Session->GetSettings().AutosaveIntervalSeconds >= 5);
+    TestTrue(TEXT("Accessibility preference persists in session"), Session->GetSettings().bHighContrast);
+    TestTrue(TEXT("Project browser has a default project"), Session->GetProjectBrowserState().Projects.Num() > 0);
+    Session->SelectProject(Session->GetProjectBrowserState().Projects[0].SlotName);
+    TestEqual(TEXT("Project browser selection persists"), Session->GetProjectBrowserState().SelectedSlotName, Session->GetProjectBrowserState().Projects[0].SlotName);
+
     UCharacterCreatorSession* RandomSessionA = NewObject<UCharacterCreatorSession>();
     UCharacterCreatorSession* RandomSessionB = NewObject<UCharacterCreatorSession>();
     RandomSessionA->InitializeDefaults();
@@ -161,6 +173,7 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
 
     const TArray<ECharacterCreatorScreen> Screens = {
         ECharacterCreatorScreen::Dashboard,
+        ECharacterCreatorScreen::ProjectBrowser,
         ECharacterCreatorScreen::CharacterCreator,
         ECharacterCreatorScreen::OutfitAndArmor,
         ECharacterCreatorScreen::HairAndGrooming,
@@ -180,7 +193,8 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
         ECharacterCreatorScreen::LODPerformance,
         ECharacterCreatorScreen::AssetBrowser,
         ECharacterCreatorScreen::ImportWizard,
-        ECharacterCreatorScreen::Settings
+        ECharacterCreatorScreen::Settings,
+        ECharacterCreatorScreen::ValidationExport
     };
     for (const ECharacterCreatorScreen Screen : Screens)
     {
@@ -208,6 +222,15 @@ bool FCharacterCreatorExportContractTest::RunTest(const FString& Parameters)
     FString Manifest;
     TestTrue(TEXT("Default state produces a manifest"), FCharacterCreatorExportService::BuildManifestJson(Appearance, Preset, Profile, Manifest));
     TestTrue(TEXT("Manifest contains the profile version"), Manifest.Contains(TEXT("profileVersion")));
+    FString BlueprintDescriptor;
+    FString DataAssetDescriptor;
+    FString PackageDescriptor;
+    TestTrue(TEXT("Blueprint descriptor is generated"), FCharacterCreatorExportService::BuildBlueprintDescriptor(Appearance, Preset, BlueprintDescriptor));
+    TestTrue(TEXT("Data Asset descriptor is generated"), FCharacterCreatorExportService::BuildDataAssetDescriptor(Appearance, Preset, DataAssetDescriptor));
+    TestTrue(TEXT("Package descriptor is generated"), FCharacterCreatorExportService::BuildPackageDescriptor(Appearance, Preset, Profile, PackageDescriptor));
+    TestTrue(TEXT("Blueprint descriptor identifies its format"), BlueprintDescriptor.Contains(TEXT("BlueprintDescriptor")));
+    TestTrue(TEXT("Data Asset descriptor identifies its format"), DataAssetDescriptor.Contains(TEXT("DataAssetDescriptor")));
+    TestTrue(TEXT("Package descriptor identifies its format"), PackageDescriptor.Contains(TEXT("PackageDescriptor")));
     return true;
 }
 

@@ -11,6 +11,7 @@
 
 #include "CharacterCreatorPreviewActor.h"
 #include "UI/CharacterCreatorSubsystem.h"
+#include "UI/CharacterCreatorExportService.h"
 
 namespace CharacterCreatorUtilityUI
 {
@@ -92,7 +93,9 @@ void UCharacterCreatorUtilityWorkspaceWidget::NativeConstruct()
     if (Session)
     {
         Session->OnAppearanceChanged.AddUObject(this, &UCharacterCreatorUtilityWorkspaceWidget::ApplyAppearance);
+        Session->OnStatusChanged.AddUObject(this, &UCharacterCreatorUtilityWorkspaceWidget::ApplyStatus);
         ApplyAppearance(Session->GetAppearanceStateNative());
+        ApplyStatus(Session->GetStatusMessage());
     }
     if (PreviewActor)
     {
@@ -108,6 +111,7 @@ void UCharacterCreatorUtilityWorkspaceWidget::NativeDestruct()
     if (Session)
     {
         Session->OnAppearanceChanged.RemoveAll(this);
+        Session->OnStatusChanged.RemoveAll(this);
     }
     if (PreviewActor)
     {
@@ -139,6 +143,7 @@ void UCharacterCreatorUtilityWorkspaceWidget::BuildNavigation(UCanvasPanel* Canv
     using namespace CharacterCreatorUtilityUI;
     AddLabel(WidgetTree, Canvas, TEXT("UtilityHeading"), TEXT("PRODUCTION"), FVector2D(28.0f, 94.0f), FVector2D(160.0f, 18.0f), 10, Palette.Muted);
     const TArray<TTuple<const TCHAR*, const TCHAR*>> Entries = {
+        {TEXT("PROJECT BROWSER"), TEXT("projects")},
         {TEXT("BODY / FACE"), TEXT("body")},
         {TEXT("ANIMATION"), TEXT("animation")},
         {TEXT("PHYSICS"), TEXT("physics")},
@@ -148,7 +153,8 @@ void UCharacterCreatorUtilityWorkspaceWidget::BuildNavigation(UCanvasPanel* Canv
         {TEXT("LOD / PERFORMANCE"), TEXT("lod")},
         {TEXT("ASSET BROWSER"), TEXT("assets")},
         {TEXT("IMPORT WIZARD"), TEXT("import")},
-        {TEXT("SETTINGS"), TEXT("settings")}
+        {TEXT("SETTINGS"), TEXT("settings")},
+        {TEXT("VALIDATION / EXPORT"), TEXT("validation")}
     };
     float Y = 122.0f;
     for (const TTuple<const TCHAR*, const TCHAR*>& Entry : Entries)
@@ -171,6 +177,48 @@ void UCharacterCreatorUtilityWorkspaceWidget::BuildPreview(UCanvasPanel* Canvas)
     PreviewImage = WidgetTree->ConstructWidget<UImage>();
     Place(Canvas, PreviewImage, FVector2D(496.0f, 244.0f), FVector2D(190.0f, 310.0f));
     AddLabel(WidgetTree, Canvas, TEXT("UtilityPreviewMeta"), TEXT("INSPECTION AND PRODUCTION VIEW"), FVector2D(278.0f, 620.0f), FVector2D(440.0f, 18.0f), 9, Palette.Gold);
+
+    if (WorkspaceScreen == ECharacterCreatorScreen::ProjectBrowser)
+    {
+        AddLabel(WidgetTree, Canvas, TEXT("ProjectBrowserHeading"), TEXT("PROJECTS"), FVector2D(278.0f, 264.0f), FVector2D(180.0f, 18.0f), 10, Palette.Muted);
+        const FCharacterCreatorProjectBrowserState Browser = Session ? Session->GetProjectBrowserState() : FCharacterCreatorProjectBrowserState();
+        int32 Index = 0;
+        for (const FCharacterCreatorProjectRecord& Project : Browser.Projects)
+        {
+            if (Index >= 5) break;
+            const float RowY = 294.0f + static_cast<float>(Index) * 58.0f;
+            AddLabel(WidgetTree, Canvas, FString::Printf(TEXT("Project_%d"), Index), Project.DisplayName.ToString().ToUpper(), FVector2D(278.0f, RowY), FVector2D(300.0f, 18.0f), 11, Palette.Text);
+            AddLabel(WidgetTree, Canvas, FString::Printf(TEXT("ProjectMeta_%d"), Index), FString::Printf(TEXT("%s  •  %d assets"), *Project.LastModifiedUtc.ToString(), Project.AssetCount), FVector2D(278.0f, RowY + 20.0f), FVector2D(390.0f, 14.0f), 9, Palette.Muted);
+            AddCommandButton(Canvas, TEXT("OPEN"), FName(*FString::Printf(TEXT("project_open_%s"), *Project.SlotName)), FVector2D(710.0f, RowY - 4.0f), FVector2D(100.0f, 30.0f), ECharacterCreatorButtonStyle::Secondary);
+            ++Index;
+        }
+        if (Browser.Projects.Num() == 0)
+        {
+            AddLabel(WidgetTree, Canvas, TEXT("ProjectEmpty"), TEXT("NO PROJECTS YET  •  CREATE A CHARACTER TO BEGIN"), FVector2D(278.0f, 330.0f), FVector2D(500.0f, 20.0f), 10, Palette.Gold);
+        }
+    }
+    else if (WorkspaceScreen == ECharacterCreatorScreen::ValidationExport)
+    {
+        AddLabel(WidgetTree, Canvas, TEXT("ValidationDashboardHeading"), TEXT("HEALTH DASHBOARD"), FVector2D(278.0f, 264.0f), FVector2D(260.0f, 18.0f), 10, Palette.Muted);
+        const TArray<FCharacterCreatorValidationIssue> Issues = Session && Session->GetTypedOuter<UCharacterCreatorSubsystem>()
+            ? Session->GetTypedOuter<UCharacterCreatorSubsystem>()->GetLastValidationIssues()
+            : TArray<FCharacterCreatorValidationIssue>();
+        if (Issues.Num() == 0)
+        {
+            AddLabel(WidgetTree, Canvas, TEXT("ValidationEmpty"), TEXT("RUN VALIDATION TO CHECK MESH, MATERIAL, ANIMATION, AND LOADOUT HEALTH"), FVector2D(278.0f, 322.0f), FVector2D(570.0f, 40.0f), 10, Palette.Gold);
+        }
+        else
+        {
+            int32 Index = 0;
+            for (const FCharacterCreatorValidationIssue& Issue : Issues)
+            {
+                if (Index >= 6) break;
+                const FLinearColor IssueColor = Issue.Severity == ECharacterCreatorValidationSeverity::Error ? Palette.Danger : Issue.Severity == ECharacterCreatorValidationSeverity::Warning ? Palette.Gold : Palette.Success;
+                AddLabel(WidgetTree, Canvas, FString::Printf(TEXT("ValidationIssue_%d"), Index), FString::Printf(TEXT("[%s] %s"), *Issue.Code.ToString().ToUpper(), *Issue.Message.ToString()), FVector2D(278.0f, 310.0f + static_cast<float>(Index) * 38.0f), FVector2D(580.0f, 30.0f), 9, IssueColor);
+                ++Index;
+            }
+        }
+    }
 }
 
 void UCharacterCreatorUtilityWorkspaceWidget::BuildInspector(UCanvasPanel* Canvas)
@@ -181,6 +229,11 @@ void UCharacterCreatorUtilityWorkspaceWidget::BuildInspector(UCanvasPanel* Canva
 
     switch (WorkspaceScreen)
     {
+    case ECharacterCreatorScreen::ProjectBrowser:
+        AddCommandButton(Canvas, TEXT("REFRESH PROJECTS"), FName(TEXT("project_refresh")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
+        AddCommandButton(Canvas, TEXT("NEW PROJECT"), FName(TEXT("project_new")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("SAVE PROJECT CATALOG"), FName(TEXT("project_save_catalog")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+        break;
     case ECharacterCreatorScreen::PhysicsSetup:
         AddCommandButton(Canvas, TEXT("VALIDATE PHYSICS ASSET"), FName(TEXT("physics_validate")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
         AddCommandButton(Canvas, TEXT("INSPECT COLLISION BODY"), FName(TEXT("physics_inspect")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
@@ -208,17 +261,36 @@ void UCharacterCreatorUtilityWorkspaceWidget::BuildInspector(UCanvasPanel* Canva
     case ECharacterCreatorScreen::ImportWizard:
         AddCommandButton(Canvas, TEXT("VALIDATE CONTENT FOLDER"), FName(TEXT("import_validate")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
         AddCommandButton(Canvas, TEXT("CHECK FAB ANIMATION PACK"), FName(TEXT("import_check_fab")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("IMPORT SELECTED ASSETS"), FName(TEXT("import_execute")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Accent);
+        AddCommandButton(Canvas, TEXT("KEEP BOTH ON CONFLICT"), FName(TEXT("import_keep_both")), FVector2D(1012.0f, 338.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("OVERWRITE ON CONFLICT"), FName(TEXT("import_overwrite")), FVector2D(1012.0f, 390.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("REVIEW DEPENDENCIES"), FName(TEXT("import_dependencies")), FVector2D(1012.0f, 442.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
         break;
     case ECharacterCreatorScreen::Settings:
-        AddCommandButton(Canvas, TEXT("UI SCALE 100%"), FName(TEXT("settings_scale")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
-        AddCommandButton(Canvas, TEXT("ENABLE GAMEPAD NAVIGATION"), FName(TEXT("settings_gamepad")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
-        AddCommandButton(Canvas, TEXT("RESTART ONBOARDING"), FName(TEXT("settings_onboarding")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("TOGGLE GAMEPAD NAVIGATION"), FName(TEXT("settings_gamepad")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Primary);
+        AddCommandButton(Canvas, TEXT("TOGGLE HIGH CONTRAST"), FName(TEXT("settings_contrast")), FVector2D(1012.0f, 226.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("TOGGLE REDUCED MOTION"), FName(TEXT("settings_motion")), FVector2D(1012.0f, 270.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("CYCLE UI SCALE"), FName(TEXT("settings_scale")), FVector2D(1012.0f, 314.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("SAVE PREFERENCES"), FName(TEXT("settings_save")), FVector2D(1012.0f, 358.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Accent);
+        AddCommandButton(Canvas, TEXT("RESTART ONBOARDING"), FName(TEXT("settings_onboarding")), FVector2D(1012.0f, 402.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("TOGGLE AUTOSAVE / BACKUPS"), FName(TEXT("settings_backup")), FVector2D(1012.0f, 446.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("TOGGLE PACKAGE EXPORT DEFAULT"), FName(TEXT("settings_export")), FVector2D(1012.0f, 490.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("TOGGLE IMPORT OVERWRITE DEFAULT"), FName(TEXT("settings_import")), FVector2D(1012.0f, 534.0f), FVector2D(352.0f, 36.0f), ECharacterCreatorButtonStyle::Secondary);
+        break;
+    case ECharacterCreatorScreen::ValidationExport:
+        AddCommandButton(Canvas, TEXT("RUN VALIDATION"), FName(TEXT("validation_run")), FVector2D(1012.0f, 182.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
+        AddCommandButton(Canvas, TEXT("APPLY SAFE FIXES"), FName(TEXT("validation_fix_all")), FVector2D(1012.0f, 234.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("EXPORT FULL PACKAGE"), FName(TEXT("export_full_package")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Accent);
+        AddCommandButton(Canvas, TEXT("EXPORT BLUEPRINT + DATA ASSET"), FName(TEXT("export_authoring")), FVector2D(1012.0f, 338.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
+        AddCommandButton(Canvas, TEXT("SHOW EXPORT HISTORY"), FName(TEXT("export_history")), FVector2D(1012.0f, 390.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
         break;
     default:
         break;
     }
 
-    FCharacterCreatorUIFactory::AddPanel(WidgetTree, Canvas, TEXT("UtilityStatePanel"), FVector2D(1012.0f, 420.0f), FVector2D(352.0f, 110.0f), Palette.Surface);
+    if (WorkspaceScreen != ECharacterCreatorScreen::Settings)
+    {
+        FCharacterCreatorUIFactory::AddPanel(WidgetTree, Canvas, TEXT("UtilityStatePanel"), FVector2D(1012.0f, 420.0f), FVector2D(352.0f, 110.0f), Palette.Surface);
     AddLabel(WidgetTree, Canvas, TEXT("UtilityStateLabel"), TEXT("WORKSPACE STATE"), FVector2D(1030.0f, 434.0f), FVector2D(180.0f, 14.0f), 9, Palette.Muted);
     UtilitySummaryText = FCharacterCreatorUIFactory::MakeLabel(WidgetTree, TEXT("Ready"), 10, Palette.Text);
     Place(Canvas, UtilitySummaryText, FVector2D(1030.0f, 456.0f), FVector2D(318.0f, 58.0f));
@@ -227,7 +299,8 @@ void UCharacterCreatorUtilityWorkspaceWidget::BuildInspector(UCanvasPanel* Canva
     EditStatusText = FCharacterCreatorUIFactory::MakeLabel(WidgetTree, TEXT("Live edit"), 11, Palette.Gold);
     Place(Canvas, EditStatusText, FVector2D(1030.0f, 580.0f), FVector2D(300.0f, 18.0f));
     AddCommandButton(Canvas, TEXT("REVERT"), FName(TEXT("revert")), FVector2D(1012.0f, 620.0f), FVector2D(160.0f, 36.0f), ECharacterCreatorButtonStyle::Secondary);
-    AddCommandButton(Canvas, TEXT("APPLY CHANGES"), FName(TEXT("apply")), FVector2D(1188.0f, 620.0f), FVector2D(176.0f, 36.0f), ECharacterCreatorButtonStyle::Accent);
+        AddCommandButton(Canvas, TEXT("APPLY CHANGES"), FName(TEXT("apply")), FVector2D(1188.0f, 620.0f), FVector2D(176.0f, 36.0f), ECharacterCreatorButtonStyle::Accent);
+    }
 }
 
 UCharacterCreatorCommandButtonWidget* UCharacterCreatorUtilityWorkspaceWidget::AddCommandButton(UCanvasPanel* Canvas, const FString& Label, FName CommandId, const FVector2D& Position, const FVector2D& Size, ECharacterCreatorButtonStyle Style)
@@ -249,6 +322,14 @@ void UCharacterCreatorUtilityWorkspaceWidget::ApplyAppearance(const FCharacterAp
     {
         EditStatusText->SetText(NewAppearance.bHasUnsavedChanges ? FText::FromString(TEXT("LIVE EDIT • NOT APPLIED")) : FText::FromString(TEXT("APPLIED TO SESSION")));
         EditStatusText->SetColorAndOpacity(FSlateColor(NewAppearance.bHasUnsavedChanges ? CharacterCreatorUtilityUI::Palette.Gold : CharacterCreatorUtilityUI::Palette.Success));
+    }
+}
+
+void UCharacterCreatorUtilityWorkspaceWidget::ApplyStatus(const FText& NewStatus)
+{
+    if (UtilitySummaryText && !NewStatus.IsEmpty())
+    {
+        UtilitySummaryText->SetText(NewStatus);
     }
 }
 
@@ -285,6 +366,7 @@ FText UCharacterCreatorUtilityWorkspaceWidget::GetWorkspaceTitle() const
 {
     switch (WorkspaceScreen)
     {
+    case ECharacterCreatorScreen::ProjectBrowser: return FText::FromString(TEXT("PROJECT / CHARACTER BROWSER"));
     case ECharacterCreatorScreen::PhysicsSetup: return FText::FromString(TEXT("PHYSICS SETUP"));
     case ECharacterCreatorScreen::GameplayTest: return FText::FromString(TEXT("GAMEPLAY TEST"));
     case ECharacterCreatorScreen::PreviewStudio: return FText::FromString(TEXT("PREVIEW STUDIO"));
@@ -293,6 +375,7 @@ FText UCharacterCreatorUtilityWorkspaceWidget::GetWorkspaceTitle() const
     case ECharacterCreatorScreen::AssetBrowser: return FText::FromString(TEXT("ASSET BROWSER"));
     case ECharacterCreatorScreen::ImportWizard: return FText::FromString(TEXT("IMPORT WIZARD"));
     case ECharacterCreatorScreen::Settings: return FText::FromString(TEXT("SETTINGS"));
+    case ECharacterCreatorScreen::ValidationExport: return FText::FromString(TEXT("VALIDATION + EXPORT"));
     default: return FText::FromString(TEXT("PRODUCTION WORKSPACE"));
     }
 }
@@ -301,7 +384,9 @@ FText UCharacterCreatorUtilityWorkspaceWidget::GetWorkspaceSubtitle() const
 {
     switch (WorkspaceScreen)
     {
+    case ECharacterCreatorScreen::ProjectBrowser: return FText::FromString(TEXT("Open, restore, and organize character projects and autosaves."));
     case ECharacterCreatorScreen::ImportWizard: return FText::FromString(TEXT("Validate extracted Content assets before adding them to the project."));
+    case ECharacterCreatorScreen::ValidationExport: return FText::FromString(TEXT("Resolve blockers and generate a complete Unreal-ready delivery set."));
     case ECharacterCreatorScreen::LODPerformance: return FText::FromString(TEXT("Inspect memory, screen-size, and performance readiness."));
     default: return FText::FromString(TEXT("Inspect and prepare the active Sidekick character state."));
     }
@@ -331,6 +416,10 @@ FText UCharacterCreatorUtilityWorkspaceWidget::GetUtilitySummary(const FCharacte
         return FText::FromString(FString::Printf(TEXT("%d assets visible • %s"), Appearance.AssetBrowser.FilteredCount, Appearance.AssetBrowser.bCanImport ? TEXT("import ready") : TEXT("no compatible selection")));
     case ECharacterCreatorScreen::ImportWizard:
         return FText::FromString(TEXT("FAB pack available under /Game/FreeAnimationsPack"));
+    case ECharacterCreatorScreen::ProjectBrowser:
+        return FText::FromString(FString::Printf(TEXT("%d projects available • selected project: %s"), Session ? Session->GetProjectBrowserState().Projects.Num() : 0, Session ? *Session->GetProjectBrowserState().SelectedSlotName : TEXT("none")));
+    case ECharacterCreatorScreen::ValidationExport:
+        return FText::FromString(TEXT("Run validation to see blockers, warnings, safe fixes, and export history."));
     default:
         return FText::FromString(TEXT("Ready for a production action"));
     }
@@ -343,6 +432,7 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
         return;
     }
     if (IsCommand(CommandId, TEXT("body"))) { Session->SetScreen(ECharacterCreatorScreen::CharacterCreator); return; }
+    if (IsCommand(CommandId, TEXT("projects"))) { Session->SetScreen(ECharacterCreatorScreen::ProjectBrowser); return; }
     if (IsCommand(CommandId, TEXT("animation"))) { Session->SetScreen(ECharacterCreatorScreen::AnimationOverview); return; }
     if (IsCommand(CommandId, TEXT("physics"))) { Session->SetScreen(ECharacterCreatorScreen::PhysicsSetup); return; }
     if (IsCommand(CommandId, TEXT("gameplay"))) { Session->SetScreen(ECharacterCreatorScreen::GameplayTest); return; }
@@ -352,8 +442,35 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
     if (IsCommand(CommandId, TEXT("assets"))) { Session->SetScreen(ECharacterCreatorScreen::AssetBrowser); return; }
     if (IsCommand(CommandId, TEXT("import"))) { Session->SetScreen(ECharacterCreatorScreen::ImportWizard); return; }
     if (IsCommand(CommandId, TEXT("settings"))) { Session->SetScreen(ECharacterCreatorScreen::Settings); return; }
+    if (IsCommand(CommandId, TEXT("validation"))) { Session->SetScreen(ECharacterCreatorScreen::ValidationExport); return; }
     if (IsCommand(CommandId, TEXT("apply"))) { Session->ApplyAppearanceChanges(); return; }
     if (IsCommand(CommandId, TEXT("revert"))) { Session->RevertAppearanceChanges(); return; }
+
+    if (CommandId.ToString().StartsWith(TEXT("project_open_")))
+    {
+        if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+        {
+            Subsystem->SelectProject(CommandId.ToString().RightChop(13));
+        }
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("project_refresh")))
+    {
+        if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>()) Subsystem->RefreshProjectBrowser();
+        Session->SetStatusMessage(FText::FromString(TEXT("Project browser refreshed")));
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("project_new")))
+    {
+        Session->ResetAppearance();
+        Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("project_save_catalog")))
+    {
+        Session->SetStatusMessage(FText::FromString(TEXT("Project catalog is saved with the next project save")));
+        return;
+    }
 
     if (IsCommand(CommandId, TEXT("camera_front")) && PreviewActor)
     {
@@ -427,6 +544,35 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
         }
     }
 
+    if (IsCommand(CommandId, TEXT("import_keep_both")) || IsCommand(CommandId, TEXT("import_overwrite")) || IsCommand(CommandId, TEXT("import_execute")))
+    {
+        if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+        {
+            FCharacterCreatorImportOptions Options;
+            Options.DestinationContentDirectory = FPaths::Combine(FPaths::ProjectContentDir(), TEXT("CharacterCreator"), TEXT("Imported"));
+            Options.bCopyDependencies = true;
+            Options.bOverwriteExisting = Session->GetSettings().bImportOverwrite || IsCommand(CommandId, TEXT("import_overwrite"));
+            Options.ConflictResolution = IsCommand(CommandId, TEXT("import_keep_both")) ? ECharacterCreatorImportConflictResolution::KeepBoth : Options.bOverwriteExisting ? ECharacterCreatorImportConflictResolution::Overwrite : ECharacterCreatorImportConflictResolution::Skip;
+            if (IsCommand(CommandId, TEXT("import_execute")))
+            {
+                FCharacterCreatorImportProgress Progress;
+                Subsystem->ImportSelectedAssets(Options, Progress);
+            }
+            else
+            {
+                Session->SetStatusMessage(Options.ConflictResolution == ECharacterCreatorImportConflictResolution::KeepBoth ? FText::FromString(TEXT("Conflict policy set to keep both")) : FText::FromString(TEXT("Conflict policy set to overwrite")));
+            }
+        }
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("import_dependencies")))
+    {
+        int32 WarningCount = 0;
+        for (const FCharacterCreatorAssetCatalogEntry& Entry : Session->GetAssetBrowserState().Entries) WarningCount += Entry.DependencyWarnings.Num();
+        Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Dependency review: %d warnings across selected assets"), WarningCount)));
+        return;
+    }
+
     if (IsCommand(CommandId, TEXT("assets_refresh_sidekick")) || IsCommand(CommandId, TEXT("assets_refresh_fab")))
     {
         if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
@@ -440,7 +586,40 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
         }
     }
 
-    const TCHAR* Message = TEXT("Production action queued");
+    if (IsCommand(CommandId, TEXT("validation_run")))
+    {
+        if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>()) Subsystem->RunValidation();
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("validation_fix_all")))
+    {
+        if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+        {
+            const int32 FixedCount = Subsystem->ApplyAllValidationFixes();
+            Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Applied %d safe validation fixes"), FixedCount)));
+        }
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("export_full_package")) || IsCommand(CommandId, TEXT("export_authoring")))
+    {
+        if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
+        {
+            FCharacterCreatorExportProfile Profile;
+            Profile.bIncludeMetadata = Session->GetSettings().bExportManifest;
+            Profile.bGenerateBlueprint = Session->GetSettings().bExportBlueprint;
+            Profile.bGenerateDataAsset = Session->GetSettings().bExportDataAsset;
+            Profile.bGeneratePackage = IsCommand(CommandId, TEXT("export_full_package")) && Session->GetSettings().bExportPackage;
+            Subsystem->ExportCurrentDeliverables(Profile, FString());
+        }
+        return;
+    }
+    if (IsCommand(CommandId, TEXT("export_history")))
+    {
+        Session->SetStatusMessage(FText::FromString(FString::Printf(TEXT("Export history contains %d entries"), Session->GetExportHistory().Num())));
+        return;
+    }
+
+    const TCHAR* Message = TEXT("Production action ready");
     if (IsCommand(CommandId, TEXT("gameplay_start")))
     {
         Session->StartGameplayTest();
@@ -453,7 +632,24 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
         Session->StopGameplayTest(true);
         return;
     }
-    if (IsCommand(CommandId, TEXT("settings_gamepad"))) Message = TEXT("Gamepad navigation preference queued");
+    if (IsCommand(CommandId, TEXT("settings_gamepad")) || IsCommand(CommandId, TEXT("settings_contrast")) || IsCommand(CommandId, TEXT("settings_motion")) || IsCommand(CommandId, TEXT("settings_scale")) || IsCommand(CommandId, TEXT("settings_backup")) || IsCommand(CommandId, TEXT("settings_export")) || IsCommand(CommandId, TEXT("settings_import")))
+    {
+        FCharacterCreatorSettings Settings = Session->GetSettings();
+        if (IsCommand(CommandId, TEXT("settings_gamepad"))) Settings.bGamepadEnabled = !Settings.bGamepadEnabled;
+        if (IsCommand(CommandId, TEXT("settings_contrast"))) Settings.bHighContrast = !Settings.bHighContrast;
+        if (IsCommand(CommandId, TEXT("settings_motion"))) Settings.bReducedMotion = !Settings.bReducedMotion;
+        if (IsCommand(CommandId, TEXT("settings_scale"))) Settings.UIScale = Settings.UIScale >= 1.25f ? 0.85f : Settings.UIScale + 0.10f;
+        if (IsCommand(CommandId, TEXT("settings_backup"))) Settings.bAutosaveEnabled = !Settings.bAutosaveEnabled;
+        if (IsCommand(CommandId, TEXT("settings_export"))) Settings.bExportPackage = !Settings.bExportPackage;
+        if (IsCommand(CommandId, TEXT("settings_import"))) Settings.bImportOverwrite = !Settings.bImportOverwrite;
+        Session->SetSettings(Settings);
+        Message = TEXT("Preferences updated");
+    }
+    if (IsCommand(CommandId, TEXT("settings_save")))
+    {
+        if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>()) Subsystem->SavePreferences();
+        return;
+    }
     if (IsCommand(CommandId, TEXT("settings_onboarding")))
     {
         Session->ResetOnboarding();

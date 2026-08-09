@@ -133,9 +133,11 @@ void UCharacterCreatorRootWidget::NativeConstruct()
         Session->OnScreenChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplyScreen);
         Session->OnStatusChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplyStatus);
         Session->OnAppearanceChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplyAppearance);
+        Session->OnSettingsChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplySettings);
         ApplyScreen(Session->GetScreen());
         ApplyStatus(Session->GetStatusMessage());
         ApplyAppearance(Session->GetAppearanceStateNative());
+        ApplySettings(Session->GetSettings());
     }
 
     if (PreviewActor)
@@ -154,6 +156,7 @@ void UCharacterCreatorRootWidget::NativeDestruct()
         Session->OnScreenChanged.RemoveAll(this);
         Session->OnStatusChanged.RemoveAll(this);
         Session->OnAppearanceChanged.RemoveAll(this);
+        Session->OnSettingsChanged.RemoveAll(this);
     }
 
     if (PreviewActor)
@@ -188,9 +191,13 @@ void UCharacterCreatorRootWidget::BuildLayout()
 
     UCanvasPanel* RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>();
     DesignSize->AddChild(RootCanvas);
+    ShellCanvas = RootCanvas;
 
     ScreenSwitcher = WidgetTree->ConstructWidget<UWidgetSwitcher>();
     Place(RootCanvas, ScreenSwitcher, FVector2D::ZeroVector, FVector2D(1440.0f, 810.0f));
+
+    GlobalOverlay = WidgetTree->ConstructWidget<UCanvasPanel>();
+    Place(RootCanvas, GlobalOverlay, FVector2D::ZeroVector, FVector2D(1440.0f, 810.0f));
 
     ModalOverlay = WidgetTree->ConstructWidget<UCanvasPanel>();
     Place(RootCanvas, ModalOverlay, FVector2D::ZeroVector, FVector2D(1440.0f, 810.0f));
@@ -241,6 +248,7 @@ void UCharacterCreatorRootWidget::BuildLayout()
     }
 
     const TArray<ECharacterCreatorScreen> UtilityWorkspaceScreens = {
+        ECharacterCreatorScreen::ProjectBrowser,
         ECharacterCreatorScreen::PhysicsSetup,
         ECharacterCreatorScreen::GameplayTest,
         ECharacterCreatorScreen::PreviewStudio,
@@ -248,7 +256,8 @@ void UCharacterCreatorRootWidget::BuildLayout()
         ECharacterCreatorScreen::LODPerformance,
         ECharacterCreatorScreen::AssetBrowser,
         ECharacterCreatorScreen::ImportWizard,
-        ECharacterCreatorScreen::Settings
+        ECharacterCreatorScreen::Settings,
+        ECharacterCreatorScreen::ValidationExport
     };
     UtilityScreens.Reset();
     for (const ECharacterCreatorScreen UtilityScreenId : UtilityWorkspaceScreens)
@@ -263,6 +272,39 @@ void UCharacterCreatorRootWidget::BuildLayout()
 
     BuildDashboard(DashboardScreen);
     BuildCharacterCreator(CharacterScreen);
+
+    if (GlobalOverlay)
+    {
+        using namespace CharacterCreatorUI;
+        AddPanel(WidgetTree, GlobalOverlay, TEXT("GlobalAssetTray"), FVector2D(220.0f, 770.0f), FVector2D(1220.0f, 40.0f), SurfaceMuted);
+        AddLabel(WidgetTree, GlobalOverlay, TEXT("GlobalTrayLabel"), TEXT("ASSET TRAY"), FVector2D(244.0f, 782.0f), FVector2D(100.0f, 14.0f), 9, Muted);
+
+        GlobalActionButtons.Reset();
+        const TArray<TTuple<const TCHAR*, const TCHAR*, ECharacterCreatorButtonStyle, FVector2D>> GlobalActions = {
+            {TEXT("BROWSER"), TEXT("global_browser"), ECharacterCreatorButtonStyle::Ghost, FVector2D(944.0f, 14.0f)},
+            {TEXT("SAVE"), TEXT("global_save"), ECharacterCreatorButtonStyle::Accent, FVector2D(1030.0f, 14.0f)},
+            {TEXT("REVERT"), TEXT("global_revert"), ECharacterCreatorButtonStyle::Secondary, FVector2D(1116.0f, 14.0f)},
+            {TEXT("SETTINGS"), TEXT("global_settings"), ECharacterCreatorButtonStyle::Ghost, FVector2D(1202.0f, 14.0f)},
+            {TEXT("GAMEPAD"), TEXT("global_gamepad"), ECharacterCreatorButtonStyle::Ghost, FVector2D(1290.0f, 14.0f)}
+        };
+        for (const TTuple<const TCHAR*, const TCHAR*, ECharacterCreatorButtonStyle, FVector2D>& Action : GlobalActions)
+        {
+            UCharacterCreatorCommandButtonWidget* Button = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, Action.Get<0>(), FName(Action.Get<1>()), Action.Get<2>(), 9);
+            Button->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
+            GlobalActionButtons.Add(Button);
+            Place(GlobalOverlay, Button, Action.Get<3>(), FVector2D(80.0f, 28.0f));
+        }
+
+        UCharacterCreatorCommandButtonWidget* AssetTrayButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, TEXT("OPEN ASSET BROWSER"), FName(TEXT("tray_assets")), ECharacterCreatorButtonStyle::Secondary, 9);
+        AssetTrayButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
+        Place(GlobalOverlay, AssetTrayButton, FVector2D(360.0f, 776.0f), FVector2D(170.0f, 28.0f));
+        UCharacterCreatorCommandButtonWidget* ImportTrayButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, TEXT("IMPORT"), FName(TEXT("tray_import")), ECharacterCreatorButtonStyle::Secondary, 9);
+        ImportTrayButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
+        Place(GlobalOverlay, ImportTrayButton, FVector2D(540.0f, 776.0f), FVector2D(100.0f, 28.0f));
+        UCharacterCreatorCommandButtonWidget* ExportTrayButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, TEXT("VALIDATE / EXPORT"), FName(TEXT("export")), ECharacterCreatorButtonStyle::Primary, 9);
+        ExportTrayButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
+        Place(GlobalOverlay, ExportTrayButton, FVector2D(650.0f, 776.0f), FVector2D(170.0f, 28.0f));
+    }
 }
 
 void UCharacterCreatorRootWidget::BuildDashboard(UCanvasPanel* Screen)
@@ -491,6 +533,9 @@ void UCharacterCreatorRootWidget::ApplyScreen(ECharacterCreatorScreen NewScreen)
     case ECharacterCreatorScreen::Dashboard:
         ScreenIndex = 0;
         break;
+    case ECharacterCreatorScreen::ProjectBrowser:
+        ScreenIndex = 13;
+        break;
     case ECharacterCreatorScreen::CharacterCreator:
         ScreenIndex = 1;
         break;
@@ -528,34 +573,38 @@ void UCharacterCreatorRootWidget::ApplyScreen(ECharacterCreatorScreen NewScreen)
         ScreenIndex = 12;
         break;
     case ECharacterCreatorScreen::PhysicsSetup:
-        ScreenIndex = 13;
-        break;
-    case ECharacterCreatorScreen::GameplayTest:
         ScreenIndex = 14;
         break;
-    case ECharacterCreatorScreen::PreviewStudio:
+    case ECharacterCreatorScreen::GameplayTest:
         ScreenIndex = 15;
         break;
-    case ECharacterCreatorScreen::PortraitStudio:
+    case ECharacterCreatorScreen::PreviewStudio:
         ScreenIndex = 16;
         break;
-    case ECharacterCreatorScreen::LODPerformance:
+    case ECharacterCreatorScreen::PortraitStudio:
         ScreenIndex = 17;
         break;
-    case ECharacterCreatorScreen::AssetBrowser:
+    case ECharacterCreatorScreen::LODPerformance:
         ScreenIndex = 18;
         break;
-    case ECharacterCreatorScreen::ImportWizard:
+    case ECharacterCreatorScreen::AssetBrowser:
         ScreenIndex = 19;
         break;
-    case ECharacterCreatorScreen::Settings:
+    case ECharacterCreatorScreen::ImportWizard:
         ScreenIndex = 20;
+        break;
+    case ECharacterCreatorScreen::Settings:
+        ScreenIndex = 21;
+        break;
+    case ECharacterCreatorScreen::ValidationExport:
+        ScreenIndex = 22;
         break;
     default:
         ScreenIndex = 1;
         break;
     }
     ScreenSwitcher->SetActiveWidgetIndex(ScreenIndex);
+    BuildFocusGraphForActiveScreen();
 
     if (NewScreen == ECharacterCreatorScreen::CharacterCreator && NewCharacterButton)
     {
@@ -599,6 +648,7 @@ void UCharacterCreatorRootWidget::ApplyScreen(ECharacterCreatorScreen NewScreen)
             LastFocusWidget = FocusTarget;
         }
         break;
+    case ECharacterCreatorScreen::ProjectBrowser:
     case ECharacterCreatorScreen::PhysicsSetup:
     case ECharacterCreatorScreen::GameplayTest:
     case ECharacterCreatorScreen::PreviewStudio:
@@ -607,21 +657,44 @@ void UCharacterCreatorRootWidget::ApplyScreen(ECharacterCreatorScreen NewScreen)
     case ECharacterCreatorScreen::AssetBrowser:
     case ECharacterCreatorScreen::ImportWizard:
     case ECharacterCreatorScreen::Settings:
-        if (UtilityScreens.IsValidIndex(static_cast<int32>(NewScreen) - static_cast<int32>(ECharacterCreatorScreen::PhysicsSetup)) && UtilityScreens[static_cast<int32>(NewScreen) - static_cast<int32>(ECharacterCreatorScreen::PhysicsSetup)])
+    case ECharacterCreatorScreen::ValidationExport:
+    {
+        const int32 UtilityIndex = NewScreen == ECharacterCreatorScreen::ProjectBrowser
+            ? 0
+            : static_cast<int32>(NewScreen) - static_cast<int32>(ECharacterCreatorScreen::PhysicsSetup) + 1;
+        if (UtilityScreens.IsValidIndex(UtilityIndex) && UtilityScreens[UtilityIndex])
         {
-            UCharacterCreatorUtilityWorkspaceWidget* FocusTarget = UtilityScreens[static_cast<int32>(NewScreen) - static_cast<int32>(ECharacterCreatorScreen::PhysicsSetup)];
+            UCharacterCreatorUtilityWorkspaceWidget* FocusTarget = UtilityScreens[UtilityIndex];
             FocusTarget->FocusFirstControl();
             LastFocusWidget = FocusTarget;
         }
         break;
+    }
     default:
         break;
+    }
+
+    if (LastFocusWidget.IsValid())
+    {
+        MoveFocusByDelta(0);
     }
 }
 
 FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
     const FKey Key = InKeyEvent.GetKey();
+    if (Session && Session->GetSettings().bGamepadEnabled && Session->GetSettings().bDPadNavigation)
+    {
+        if (Key == EKeys::Gamepad_DPad_Left || Key == EKeys::Gamepad_DPad_Up)
+        {
+            return MoveFocusByDelta(-1) ? FReply::Handled() : FReply::Unhandled();
+        }
+        if (Key == EKeys::Gamepad_DPad_Right || Key == EKeys::Gamepad_DPad_Down)
+        {
+            return MoveFocusByDelta(1) ? FReply::Handled() : FReply::Unhandled();
+        }
+    }
+
     if (Key == EKeys::Escape)
     {
         if (ModalManager && ModalManager->CloseTopModal())
@@ -640,6 +713,7 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
     {
         const TArray<ECharacterCreatorScreen> ScreenOrder = {
             ECharacterCreatorScreen::Dashboard,
+            ECharacterCreatorScreen::ProjectBrowser,
             ECharacterCreatorScreen::CharacterCreator,
             ECharacterCreatorScreen::OutfitAndArmor,
             ECharacterCreatorScreen::HairAndGrooming,
@@ -659,7 +733,8 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
             ECharacterCreatorScreen::LODPerformance,
             ECharacterCreatorScreen::AssetBrowser,
             ECharacterCreatorScreen::ImportWizard,
-            ECharacterCreatorScreen::Settings
+            ECharacterCreatorScreen::Settings,
+            ECharacterCreatorScreen::ValidationExport
         };
         const int32 CurrentIndex = ScreenOrder.IndexOfByKey(Session->GetScreen());
         if (CurrentIndex != INDEX_NONE)
@@ -671,7 +746,7 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
         }
     }
 
-    if (Session && Key == EKeys::Gamepad_FaceButton_Bottom)
+    if (Session && Key == EKeys::Gamepad_FaceButton_Bottom && (!ModalManager || !ModalManager->HasOpenModal()))
     {
         Session->ApplyAppearanceChanges();
         return FReply::Handled();
@@ -679,11 +754,33 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
 
     if (Session && Key == EKeys::Gamepad_FaceButton_Right)
     {
+        if (ModalManager && ModalManager->HasOpenModal())
+        {
+            ModalManager->CloseTopModal();
+            return FReply::Handled();
+        }
         Session->RevertAppearanceChanges();
         return FReply::Handled();
     }
 
     return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+FReply UCharacterCreatorRootWidget::NativeOnAnalogValueChanged(const FGeometry& InGeometry, const FAnalogInputEvent& InAnalogEvent)
+{
+    if (Session && Session->GetSettings().bGamepadEnabled)
+    {
+        HandleGamepadCameraInput(InAnalogEvent);
+        if (InAnalogEvent.GetKey() == EKeys::Gamepad_LeftX || InAnalogEvent.GetKey() == EKeys::Gamepad_LeftY)
+        {
+            const float Value = InAnalogEvent.GetAnalogValue();
+            if (Session->GetSettings().bAnalogNavigation && FMath::Abs(Value) > 0.75f)
+            {
+                return MoveFocusByDelta(Value > 0.0f ? 1 : -1) ? FReply::Handled() : FReply::Unhandled();
+            }
+        }
+    }
+    return Super::NativeOnAnalogValueChanged(InGeometry, InAnalogEvent);
 }
 
 void UCharacterCreatorRootWidget::ApplyStatus(const FText& NewStatus)
@@ -697,6 +794,127 @@ void UCharacterCreatorRootWidget::ApplyStatus(const FText& NewStatus)
     {
         CharacterStatusText->SetText(NewStatus);
     }
+}
+
+void UCharacterCreatorRootWidget::ApplySettings(const FCharacterCreatorSettings& NewSettings)
+{
+    if (ShellCanvas)
+    {
+        ShellCanvas->SetRenderScale(FVector2D(NewSettings.UIScale));
+    }
+}
+
+void UCharacterCreatorRootWidget::BuildFocusGraphForActiveScreen()
+{
+    ActiveFocusWidgets.Reset();
+    if (!WidgetTree)
+    {
+        return;
+    }
+
+    TArray<UWidget*> AllWidgets;
+    WidgetTree->GetAllWidgets(AllWidgets);
+    for (UWidget* Widget : AllWidgets)
+    {
+        const UButton* Button = Cast<UButton>(Widget);
+        const USlider* Slider = Cast<USlider>(Widget);
+        const bool bFocusable = (Button && Button->GetIsFocusable()) || (Slider && Slider->IsFocusable);
+        if (Widget && bFocusable && Widget->GetVisibility() == ESlateVisibility::Visible)
+        {
+            ActiveFocusWidgets.Add(Widget);
+        }
+    }
+
+    TArray<UWidget*> FocusGraphWidgets;
+    for (UWidget* Widget : ActiveFocusWidgets)
+    {
+        FocusGraphWidgets.Add(Widget);
+    }
+    FCharacterCreatorUIFactory::ConfigureFocusGraph(FocusGraphWidgets);
+
+    if (Session)
+    {
+        TArray<FCharacterCreatorFocusGraphNode> Graph;
+        for (int32 Index = 0; Index < ActiveFocusWidgets.Num(); ++Index)
+        {
+            FCharacterCreatorFocusGraphNode& Node = Graph.AddDefaulted_GetRef();
+            Node.Id = ActiveFocusWidgets[Index]->GetFName();
+            Node.Left = Index > 0 ? ActiveFocusWidgets[Index - 1]->GetFName() : (ActiveFocusWidgets.Num() > 1 ? ActiveFocusWidgets.Last()->GetFName() : NAME_None);
+            Node.Right = Index + 1 < ActiveFocusWidgets.Num() ? ActiveFocusWidgets[Index + 1]->GetFName() : (ActiveFocusWidgets.Num() > 1 ? ActiveFocusWidgets[0]->GetFName() : NAME_None);
+            Node.Up = Node.Left;
+            Node.Down = Node.Right;
+        }
+        Session->SetFocusGraph(Graph);
+    }
+}
+
+bool UCharacterCreatorRootWidget::MoveFocusByDelta(int32 Delta)
+{
+    if (ActiveFocusWidgets.Num() == 0)
+    {
+        BuildFocusGraphForActiveScreen();
+    }
+    if (ActiveFocusWidgets.Num() == 0)
+    {
+        return false;
+    }
+
+    int32 CurrentIndex = LastFocusWidget.IsValid() ? ActiveFocusWidgets.IndexOfByKey(LastFocusWidget.Get()) : INDEX_NONE;
+    if (CurrentIndex == INDEX_NONE)
+    {
+        CurrentIndex = 0;
+    }
+    CurrentIndex = (CurrentIndex + Delta + ActiveFocusWidgets.Num()) % ActiveFocusWidgets.Num();
+    for (UWidget* Widget : ActiveFocusWidgets)
+    {
+        if (UCharacterCreatorButtonWidget* Button = Cast<UCharacterCreatorButtonWidget>(Widget))
+        {
+            Button->SetFocusVisual(false);
+        }
+    }
+    LastFocusWidget = ActiveFocusWidgets[CurrentIndex];
+    if (UCharacterCreatorButtonWidget* Button = Cast<UCharacterCreatorButtonWidget>(ActiveFocusWidgets[CurrentIndex]))
+    {
+        Button->SetFocusVisual(true);
+    }
+    UCharacterCreatorUIHelpers::FocusWidget(ActiveFocusWidgets[CurrentIndex]);
+    return true;
+}
+
+void UCharacterCreatorRootWidget::HandleGamepadCameraInput(const FAnalogInputEvent& AnalogEvent)
+{
+    if (!Session || !PreviewActor || !Session->GetSettings().bAnalogNavigation)
+    {
+        return;
+    }
+
+    const FKey Key = AnalogEvent.GetKey();
+    if (Key != EKeys::Gamepad_RightX && Key != EKeys::Gamepad_RightY)
+    {
+        return;
+    }
+
+    const ECharacterCreatorScreen Screen = Session->GetScreen();
+    if (Screen != ECharacterCreatorScreen::CharacterCreator && Screen != ECharacterCreatorScreen::PreviewStudio && Screen != ECharacterCreatorScreen::PortraitStudio)
+    {
+        return;
+    }
+
+    FCharacterCreatorPreviewStudioState StudioState = Session->GetPreviewStudioState();
+    const float Sensitivity = Session->GetSettings().CameraSensitivity * 3.0f;
+    const float AnalogValue = AnalogEvent.GetAnalogValue();
+    if (Key == EKeys::Gamepad_RightX)
+    {
+        StudioState.OrbitYaw += AnalogValue * Sensitivity;
+    }
+    else
+    {
+        const float Direction = Session->GetSettings().bInvertCameraY ? 1.0f : -1.0f;
+        StudioState.OrbitPitch += AnalogValue * Sensitivity * Direction;
+    }
+    StudioState.bOrbitEnabled = true;
+    Session->SetPreviewStudioState(StudioState);
+    PreviewActor->SetCameraOrbit(StudioState.OrbitYaw, StudioState.OrbitPitch, StudioState.Zoom);
 }
 
 void UCharacterCreatorRootWidget::ApplyAppearance(const FCharacterAppearanceState& NewAppearance)
@@ -948,8 +1166,30 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
         return;
     }
 
+    if (CommandId == FName(TEXT("dialog_import_dependencies")))
+    {
+        if (ModalManager) ModalManager->CloseTopModal();
+        OpenModalDialog(FName(TEXT("dependency_warning")), TEXT("DEPENDENCY REVIEW"), TEXT("Some imported assets may reference external materials, skeletons, or animation dependencies. Validate the content folder and copy dependencies before applying the import."), { TPair<FName, FString>(FName(TEXT("dialog_import_open")), TEXT("OPEN IMPORT WIZARD")), TPair<FName, FString>(FName(TEXT("dialog_close")), TEXT("CANCEL")) });
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_import_conflicts")))
+    {
+        if (ModalManager) ModalManager->CloseTopModal();
+        OpenModalDialog(FName(TEXT("conflict_resolution")), TEXT("CONFLICT POLICY"), TEXT("Choose what to do when an imported file already exists in the destination Content folder."), { TPair<FName, FString>(FName(TEXT("dialog_conflict_keep_both")), TEXT("KEEP BOTH")), TPair<FName, FString>(FName(TEXT("dialog_conflict_replace")), TEXT("OVERWRITE")), TPair<FName, FString>(FName(TEXT("dialog_close")), TEXT("CANCEL")) });
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_conflict_keep_both")) || CommandId == FName(TEXT("dialog_conflict_replace")))
+    {
+        if (Session) Session->SetStatusMessage(CommandId == FName(TEXT("dialog_conflict_keep_both")) ? FText::FromString(TEXT("Import conflict policy: keep both")) : FText::FromString(TEXT("Import conflict policy: overwrite existing")));
+        if (ModalManager) ModalManager->CloseTopModal();
+        return;
+    }
+
     if (CommandId == FName(TEXT("dialog_export_full")) || CommandId == FName(TEXT("dialog_export_metadata")))
     {
+        bool bExported = false;
         if (Session)
         {
             if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
@@ -962,13 +1202,14 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
                     Profile.bIncludeAnimations = false;
                     Profile.bIncludeMetadata = true;
                 }
-                Subsystem->ExportCurrentManifest(Profile, FString());
+                bExported = Subsystem->ExportCurrentManifest(Profile, FString());
             }
         }
         if (ModalManager)
         {
             ModalManager->CloseTopModal();
         }
+        OpenModalDialog(bExported ? FName(TEXT("export_success")) : FName(TEXT("export_error")), bExported ? TEXT("EXPORT COMPLETE") : TEXT("EXPORT BLOCKED"), bExported ? TEXT("The validated character manifest is ready in Saved/CharacterCreator/Exports. Use Validation + Export to generate Blueprint, Data Asset, and package descriptors.") : TEXT("Export validation found a blocking issue. Open Validation + Export to review the issue list and apply safe fixes."), { TPair<FName, FString>(FName(TEXT("dialog_close")), bExported ? TEXT("DONE") : TEXT("REVIEW LATER")) });
         return;
     }
 
@@ -1072,6 +1313,34 @@ void UCharacterCreatorRootWidget::HandleWorkflowCommand(FName CommandId)
     {
         Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
     }
+    else if (CommandId == FName(TEXT("global_browser")))
+    {
+        Session->SetScreen(ECharacterCreatorScreen::ProjectBrowser);
+    }
+    else if (CommandId == FName(TEXT("global_save")))
+    {
+        HandleSaveCharacterClicked();
+    }
+    else if (CommandId == FName(TEXT("global_revert")))
+    {
+        HandleRevertCharacterClicked();
+    }
+    else if (CommandId == FName(TEXT("global_settings")))
+    {
+        Session->SetScreen(ECharacterCreatorScreen::Settings);
+    }
+    else if (CommandId == FName(TEXT("global_gamepad")))
+    {
+        OpenModalDialog(FName(TEXT("gamepad_overlay")), TEXT("GAMEPAD CONTROLS"), TEXT("D-PAD or left stick navigates. A confirms. B cancels or reverts. LB / RB switches workspaces. Right stick orbits the preview camera."), { TPair<FName, FString>(FName(TEXT("dialog_close")), TEXT("CLOSE")) });
+    }
+    else if (CommandId == FName(TEXT("tray_assets")))
+    {
+        Session->SetScreen(ECharacterCreatorScreen::AssetBrowser);
+    }
+    else if (CommandId == FName(TEXT("tray_import")))
+    {
+        Session->SetScreen(ECharacterCreatorScreen::ImportWizard);
+    }
     else if (CommandId == FName(TEXT("outfit")))
     {
         Session->SetScreen(ECharacterCreatorScreen::OutfitAndArmor);
@@ -1111,6 +1380,7 @@ void UCharacterCreatorRootWidget::HandleWorkflowCommand(FName CommandId)
     }
     else if (CommandId == FName(TEXT("export")))
     {
+        Session->SetScreen(ECharacterCreatorScreen::ValidationExport);
         OpenModalDialog(
             FName(TEXT("export_options")),
             TEXT("EXPORT OPTIONS"),
@@ -1129,21 +1399,9 @@ void UCharacterCreatorRootWidget::HandleOpenProjectClicked()
     {
         if (UCharacterCreatorSubsystem* Subsystem = Session->GetTypedOuter<UCharacterCreatorSubsystem>())
         {
-            if (Subsystem->LoadAutosave())
-            {
-                Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
-                return;
-            }
+            Subsystem->RefreshProjectBrowser();
         }
-
-        Session->SetStatusMessage(FText::FromString(TEXT("No autosave exists yet; create a character first")));
-        OpenModalDialog(
-            FName(TEXT("load_error")),
-            TEXT("NO SAVED PROJECT"),
-            TEXT("There is no compatible autosave yet. Save the active character first, then use Open Project to restore it after a restart."),
-            {
-                TPair<FName, FString>(FName(TEXT("dialog_close")), TEXT("CLOSE"))
-            });
+        Session->SetScreen(ECharacterCreatorScreen::ProjectBrowser);
     }
 }
 
@@ -1155,6 +1413,8 @@ void UCharacterCreatorRootWidget::HandleImportAssetClicked()
         TEXT("The installed FAB content is available under /Game/FreeAnimationsPack. Validate its files first, or open the import wizard for the full progress view."),
         {
             TPair<FName, FString>(FName(TEXT("dialog_import_validate")), TEXT("VALIDATE FAB CONTENT")),
+            TPair<FName, FString>(FName(TEXT("dialog_import_dependencies")), TEXT("REVIEW DEPENDENCIES")),
+            TPair<FName, FString>(FName(TEXT("dialog_import_conflicts")), TEXT("REVIEW CONFLICT POLICY")),
             TPair<FName, FString>(FName(TEXT("dialog_import_open")), TEXT("OPEN IMPORT WIZARD")),
             TPair<FName, FString>(FName(TEXT("dialog_cancel")), TEXT("CANCEL"))
         });

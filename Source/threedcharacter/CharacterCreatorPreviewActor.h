@@ -54,6 +54,9 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Preview")
     void SetCameraMode(ECharacterCreatorPreviewCameraMode NewMode);
 
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Preview")
+    void SetCameraOrbit(float Yaw, float Pitch, float Zoom = 1.0f);
+
     FOnCharacterCreatorPreviewStateChanged OnPreviewStateChanged;
 
 protected:

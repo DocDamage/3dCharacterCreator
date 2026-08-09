@@ -41,6 +41,12 @@ void UCharacterCreatorPanelWidget::SetPanelColor(const FLinearColor& Color)
     SetBrushColor(Color);
 }
 
+UCharacterCreatorButtonWidget::UCharacterCreatorButtonWidget(const FObjectInitializer& ObjectInitializer)
+    : Super(ObjectInitializer)
+{
+    InitIsFocusable(true);
+}
+
 void UCharacterCreatorButtonWidget::SetButtonStyle(ECharacterCreatorButtonStyle Style)
 {
     const FCharacterCreatorStylePalette& Palette = FCharacterCreatorUIStyle::GetPalette();
@@ -67,6 +73,15 @@ void UCharacterCreatorButtonWidget::SetButtonStyle(ECharacterCreatorButtonStyle 
         SetColorAndOpacity(FLinearColor::White);
         break;
     }
+    UnfocusedBackgroundColor = GetBackgroundColor();
+    UnfocusedForegroundColor = GetColorAndOpacity();
+}
+
+void UCharacterCreatorButtonWidget::SetFocusVisual(bool bFocused)
+{
+    const FCharacterCreatorStylePalette& Palette = FCharacterCreatorUIStyle::GetPalette();
+    SetBackgroundColor(bFocused ? Palette.Blue : UnfocusedBackgroundColor);
+    SetColorAndOpacity(bFocused ? Palette.Text : UnfocusedForegroundColor);
 }
 
 UCharacterCreatorCommandButtonWidget::UCharacterCreatorCommandButtonWidget(const FObjectInitializer& ObjectInitializer)
@@ -83,6 +98,7 @@ void UCharacterCreatorCommandButtonWidget::HandleClicked()
 UCharacterCreatorSliderWidget::UCharacterCreatorSliderWidget(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
+    IsFocusable = true;
     OnValueChanged.AddDynamic(this, &UCharacterCreatorSliderWidget::HandleValueChanged);
 }
 
@@ -257,6 +273,29 @@ void FCharacterCreatorUIFactory::AddPanel(UWidgetTree* Tree, UCanvasPanel* Canva
     UCharacterCreatorPanelWidget* Border = MakePanel(Tree, Color);
     Border->Rename(*Name);
     Place(Canvas, Border, Position, Size);
+}
+
+void FCharacterCreatorUIFactory::ConfigureFocusGraph(const TArray<UWidget*>& Widgets, bool bLoop)
+{
+    TArray<UWidget*> Focusable;
+    for (UWidget* Widget : Widgets)
+    {
+        const UButton* Button = Cast<UButton>(Widget);
+        const USlider* Slider = Cast<USlider>(Widget);
+        const bool bFocusable = (Button && Button->GetIsFocusable()) || (Slider && Slider->IsFocusable);
+        if (Widget && bFocusable && Widget->GetVisibility() != ESlateVisibility::Collapsed && Widget->GetVisibility() != ESlateVisibility::Hidden)
+        {
+            Focusable.Add(Widget);
+        }
+    }
+
+    for (int32 Index = 0; Index < Focusable.Num(); ++Index)
+    {
+        UWidget* Previous = Index > 0 ? Focusable[Index - 1] : (bLoop && Focusable.Num() > 1 ? Focusable.Last() : nullptr);
+        UWidget* Next = Index + 1 < Focusable.Num() ? Focusable[Index + 1] : (bLoop && Focusable.Num() > 1 ? Focusable[0] : nullptr);
+        if (Previous) Focusable[Index]->SetNavigationRuleExplicit(EUINavigation::Previous, Previous);
+        if (Next) Focusable[Index]->SetNavigationRuleExplicit(EUINavigation::Next, Next);
+    }
 }
 
 void UCharacterCreatorUIHelpers::FocusWidget(UWidget* Widget)

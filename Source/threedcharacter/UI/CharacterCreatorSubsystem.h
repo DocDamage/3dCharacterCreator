@@ -42,6 +42,36 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Export")
     bool ExportCurrentManifest(const FCharacterCreatorExportProfile& Profile, const FString& DestinationPath);
 
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Export")
+    bool RunValidation();
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Export")
+    bool ApplyValidationFix(FName IssueCode);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Export")
+    int32 ApplyAllValidationFixes();
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Export")
+    TArray<FCharacterCreatorValidationIssue> GetLastValidationIssues() const { return LastValidationIssues; }
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Export")
+    bool ExportCurrentDeliverables(const FCharacterCreatorExportProfile& Profile, const FString& DestinationDirectory);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Export")
+    TArray<FCharacterCreatorExportHistoryEntry> GetExportHistory() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Settings")
+    bool SavePreferences();
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Settings")
+    bool LoadPreferences();
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Project")
+    bool RefreshProjectBrowser();
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Project")
+    bool SelectProject(const FString& SlotName);
+
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Import")
     bool ValidateImportDirectory(const FString& SourceDirectory, FCharacterCreatorImportProgress& OutProgress);
 
@@ -53,13 +83,21 @@ public:
 
 private:
     void HandleAppearanceChanged(const FCharacterAppearanceState& NewAppearance);
+    void HandleSettingsChanged(const FCharacterCreatorSettings& NewSettings);
     void HandleAutosaveTick();
     void EnsureAutosaveTimer();
+    bool SaveProjectCatalog();
+    bool LoadProjectCatalog();
+    void AddExportHistory(bool bSucceeded, const FString& DestinationDirectory, const TArray<ECharacterCreatorDeliverable>& Deliverables, const FText& Summary);
 
     UPROPERTY()
     TObjectPtr<UCharacterCreatorSession> Session;
 
     FTimerHandle AutosaveTimerHandle;
     FString AutosaveSlotName = TEXT("CharacterCreator_Autosave");
+    FString SettingsSlotName = TEXT("CharacterCreator_Settings");
+    FString ProjectCatalogSlotName = TEXT("CharacterCreator_ProjectCatalog");
     bool bAutosavePending = false;
+
+    TArray<FCharacterCreatorValidationIssue> LastValidationIssues;
 };

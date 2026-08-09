@@ -445,6 +445,20 @@ void UCharacterCreatorSession::SetActivePreset(const FCharacterPreset& NewPreset
 void UCharacterCreatorSession::InitializeDefaults()
 {
     AppearanceState = FCharacterAppearanceState();
+    Settings = FCharacterCreatorSettings();
+    Settings.BackupDirectory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Backups"));
+    Settings.Sanitize();
+    ProjectBrowser = FCharacterCreatorProjectBrowserState();
+    FCharacterCreatorProjectRecord DefaultProject;
+    DefaultProject.SlotName = TEXT("CharacterCreator_Autosave");
+    DefaultProject.DisplayName = FText::FromString(Settings.ProjectName);
+    DefaultProject.LastModifiedUtc = FDateTime::UtcNow();
+    DefaultProject.AssetCount = 0;
+    DefaultProject.bAutosave = true;
+    ProjectBrowser.Projects.Add(DefaultProject);
+    ProjectBrowser.SelectedSlotName = DefaultProject.SlotName;
+    ExportHistory.Reset();
+    FocusGraph.Reset();
     FCharacterCreatorMaterialSlotState SkinMaterial;
     SkinMaterial.Tint = AppearanceState.SkinColor;
     SkinMaterial.Roughness = AppearanceState.Grooming.SkinRoughness;
@@ -1583,6 +1597,58 @@ FCharacterCreatorControllerHintState UCharacterCreatorSession::GetControllerHint
     return AppearanceState.PreviewTesting.Controller;
 }
 
+void UCharacterCreatorSession::SetSettings(const FCharacterCreatorSettings& NewSettings)
+{
+    Settings = NewSettings;
+    if (Settings.BackupDirectory.IsEmpty())
+    {
+        Settings.BackupDirectory = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("Backups"));
+    }
+    Settings.Sanitize();
+    AppearanceState.PreviewTesting.Controller.bGamepadEnabled = Settings.bGamepadEnabled;
+    OnSettingsChanged.Broadcast(Settings);
+}
+
+void UCharacterCreatorSession::SetProjectBrowserState(const FCharacterCreatorProjectBrowserState& NewState)
+{
+    ProjectBrowser = NewState;
+    OnProjectBrowserChanged.Broadcast(ProjectBrowser);
+}
+
+void UCharacterCreatorSession::SelectProject(const FString& SlotName)
+{
+    if (SlotName.IsEmpty())
+    {
+        return;
+    }
+
+    ProjectBrowser.SelectedSlotName = SlotName;
+    OnProjectBrowserChanged.Broadcast(ProjectBrowser);
+}
+
+void UCharacterCreatorSession::AddExportHistoryEntry(const FCharacterCreatorExportHistoryEntry& Entry)
+{
+    ExportHistory.Insert(Entry, 0);
+    if (ExportHistory.Num() > 20)
+    {
+        ExportHistory.SetNum(20);
+    }
+}
+
+void UCharacterCreatorSession::SetExportHistory(const TArray<FCharacterCreatorExportHistoryEntry>& NewHistory)
+{
+    ExportHistory = NewHistory;
+    if (ExportHistory.Num() > 20)
+    {
+        ExportHistory.SetNum(20);
+    }
+}
+
+void UCharacterCreatorSession::SetFocusGraph(const TArray<FCharacterCreatorFocusGraphNode>& NewGraph)
+{
+    FocusGraph = NewGraph;
+}
+
 void UCharacterCreatorSession::AdvanceOnboarding()
 {
     if (OnboardingState.bCompleted || OnboardingState.bSkipped)
@@ -1664,4 +1730,6 @@ void UCharacterCreatorSession::Shutdown()
     OnAppearanceChanged.Clear();
     OnPresetChanged.Clear();
     OnImportProgressChanged.Clear();
+    OnSettingsChanged.Clear();
+    OnProjectBrowserChanged.Clear();
 }

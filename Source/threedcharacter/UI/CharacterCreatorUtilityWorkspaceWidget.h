@@ -35,6 +35,7 @@ private:
     void BuildInspector(UCanvasPanel* Canvas);
     UCharacterCreatorCommandButtonWidget* AddCommandButton(UCanvasPanel* Canvas, const FString& Label, FName CommandId, const FVector2D& Position, const FVector2D& Size, ECharacterCreatorButtonStyle Style);
     void ApplyAppearance(const FCharacterAppearanceState& NewAppearance);
+    void ApplyStatus(const FText& NewStatus);
     void ApplyPreviewRenderTarget();
     void ApplyPreviewState(ECharacterCreatorPreviewState NewState, const FText& Message);
     void HandleCommand(FName CommandId);

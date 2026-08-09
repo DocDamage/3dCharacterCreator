@@ -89,8 +89,16 @@ class THREEDCHARACTER_API UCharacterCreatorButtonWidget : public UButton
     GENERATED_BODY()
 
 public:
+    UCharacterCreatorButtonWidget(const FObjectInitializer& ObjectInitializer);
+
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Style")
     void SetButtonStyle(ECharacterCreatorButtonStyle Style);
+
+    void SetFocusVisual(bool bFocused);
+
+private:
+    FLinearColor UnfocusedBackgroundColor = FLinearColor::White;
+    FLinearColor UnfocusedForegroundColor = FLinearColor::White;
 };
 
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorCommand, FName);
@@ -213,6 +221,7 @@ struct THREEDCHARACTER_API FCharacterCreatorUIFactory
     static UCharacterCreatorSliderWidget* MakeSlider(UWidgetTree* Tree, ECharacterCreatorParameter Parameter, float Value);
     static void AddLabel(UWidgetTree* Tree, UCanvasPanel* Canvas, const FString& Name, const FString& Value, const FVector2D& Position, const FVector2D& Size, int32 FontSize, const FLinearColor& Color);
     static void AddPanel(UWidgetTree* Tree, UCanvasPanel* Canvas, const FString& Name, const FVector2D& Position, const FVector2D& Size, const FLinearColor& Color);
+    static void ConfigureFocusGraph(const TArray<UWidget*>& Widgets, bool bLoop = true);
 };
 
 UCLASS()

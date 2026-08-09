@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "UI/CharacterCreatorImportService.h"
+#include "UI/CharacterCreatorStateTypes.h"
 #include "CharacterCreatorSession.generated.h"
 
 class UAnimInstance;
@@ -16,6 +17,7 @@ UENUM(BlueprintType)
 enum class ECharacterCreatorScreen : uint8
 {
     Dashboard,
+    ProjectBrowser,
     CharacterCreator,
     OutfitAndArmor,
     HairAndGrooming,
@@ -35,7 +37,8 @@ enum class ECharacterCreatorScreen : uint8
     LODPerformance,
     AssetBrowser,
     ImportWizard,
-    Settings
+    Settings,
+    ValidationExport
 };
 
 UENUM(BlueprintType)
@@ -971,6 +974,8 @@ DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorStatusChanged, const FTex
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorAppearanceChanged, const FCharacterAppearanceState&);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorPresetChanged, const FCharacterPreset&);
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorImportProgressChanged, const FCharacterCreatorImportProgress&);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorSettingsChanged, const FCharacterCreatorSettings&);
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorProjectBrowserChanged, const FCharacterCreatorProjectBrowserState&);
 
 UCLASS(BlueprintType)
 class THREEDCHARACTER_API UCharacterCreatorSession : public UObject
@@ -1239,6 +1244,35 @@ public:
     UFUNCTION(BlueprintPure, Category = "Character Creator|Input")
     FCharacterCreatorControllerHintState GetControllerHintState() const;
 
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Settings")
+    void SetSettings(const FCharacterCreatorSettings& NewSettings);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Settings")
+    FCharacterCreatorSettings GetSettings() const { return Settings; }
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Project")
+    void SetProjectBrowserState(const FCharacterCreatorProjectBrowserState& NewState);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Project")
+    FCharacterCreatorProjectBrowserState GetProjectBrowserState() const { return ProjectBrowser; }
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Project")
+    void SelectProject(const FString& SlotName);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Export")
+    void AddExportHistoryEntry(const FCharacterCreatorExportHistoryEntry& Entry);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Export")
+    TArray<FCharacterCreatorExportHistoryEntry> GetExportHistory() const { return ExportHistory; }
+
+    void SetExportHistory(const TArray<FCharacterCreatorExportHistoryEntry>& NewHistory);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Input")
+    void SetFocusGraph(const TArray<FCharacterCreatorFocusGraphNode>& NewGraph);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Input")
+    TArray<FCharacterCreatorFocusGraphNode> GetFocusGraph() const { return FocusGraph; }
+
     UFUNCTION(BlueprintCallable, Category = "Character Creator|Onboarding")
     void AdvanceOnboarding();
 
@@ -1284,6 +1318,8 @@ public:
     FOnCharacterCreatorAppearanceChanged OnAppearanceChanged;
     FOnCharacterCreatorPresetChanged OnPresetChanged;
     FOnCharacterCreatorImportProgressChanged OnImportProgressChanged;
+    FOnCharacterCreatorSettingsChanged OnSettingsChanged;
+    FOnCharacterCreatorProjectBrowserChanged OnProjectBrowserChanged;
 
 private:
     ECharacterCreatorScreen CurrentScreen = ECharacterCreatorScreen::Dashboard;
@@ -1294,5 +1330,9 @@ private:
     TArray<FCharacterPreset> Presets;
     FCharacterCreatorImportProgress ImportProgress;
     FCharacterCreatorOnboardingState OnboardingState;
+    FCharacterCreatorSettings Settings;
+    FCharacterCreatorProjectBrowserState ProjectBrowser;
+    TArray<FCharacterCreatorExportHistoryEntry> ExportHistory;
+    TArray<FCharacterCreatorFocusGraphNode> FocusGraph;
     FDateTime GameplayTestStartUtc;
 };

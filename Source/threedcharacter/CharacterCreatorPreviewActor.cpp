@@ -128,6 +128,30 @@ void ACharacterCreatorPreviewActor::SetCameraMode(ECharacterCreatorPreviewCamera
     }
 }
 
+void ACharacterCreatorPreviewActor::SetCameraOrbit(float Yaw, float Pitch, float Zoom)
+{
+    const float SafeYaw = FMath::Clamp(Yaw, -180.0f, 180.0f);
+    const float SafePitch = FMath::Clamp(Pitch, -80.0f, 80.0f);
+    const float SafeZoom = FMath::Clamp(Zoom, 0.5f, 2.0f);
+    const FVector Target(0.0f, 0.0f, 105.0f);
+    const FVector CameraOffset = FRotator(SafePitch, SafeYaw, 0.0f).RotateVector(FVector(0.0f, -420.0f, 0.0f));
+    const FVector CameraLocation = Target + CameraOffset;
+    const FRotator AimRotation = (Target - CameraLocation).Rotation();
+    const float FieldOfView = 28.0f / SafeZoom;
+    if (PreviewCamera)
+    {
+        PreviewCamera->SetRelativeLocation(CameraLocation);
+        PreviewCamera->SetRelativeRotation(AimRotation);
+        PreviewCamera->FieldOfView = FieldOfView;
+    }
+    if (SceneCapture)
+    {
+        SceneCapture->SetRelativeLocation(CameraLocation);
+        SceneCapture->SetRelativeRotation(AimRotation);
+        SceneCapture->FOVAngle = FieldOfView;
+    }
+}
+
 void ACharacterCreatorPreviewActor::InitializeWithSession(UCharacterCreatorSession* InSession)
 {
     if (Session)

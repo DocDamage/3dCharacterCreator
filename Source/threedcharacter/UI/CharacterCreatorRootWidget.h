@@ -21,6 +21,7 @@ class UCharacterCreatorUtilityWorkspaceWidget;
 class UCharacterCreatorModalManager;
 class UCharacterCreatorModalWidget;
 class UImage;
+class UWidget;
 class ACharacterCreatorPreviewActor;
 enum class ECharacterCreatorPreviewState : uint8;
 
@@ -44,14 +45,19 @@ private:
     void ApplyScreen(ECharacterCreatorScreen NewScreen);
     void ApplyStatus(const FText& NewStatus);
     void ApplyAppearance(const FCharacterAppearanceState& NewAppearance);
+    void ApplySettings(const FCharacterCreatorSettings& NewSettings);
     void HandleBodyParameterChanged(ECharacterCreatorParameter Parameter, float Value);
     void ApplyPreviewRenderTarget();
     void ApplyPreviewState(ECharacterCreatorPreviewState NewState, const FText& Message);
     void HandleWorkflowCommand(FName CommandId);
     void OpenModalDialog(FName DialogId, const FString& Title, const FString& Message, const TArray<TPair<FName, FString>>& Actions);
     void HandleModalCommand(FName CommandId);
+    void BuildFocusGraphForActiveScreen();
+    bool MoveFocusByDelta(int32 Delta);
+    void HandleGamepadCameraInput(const FAnalogInputEvent& AnalogEvent);
 
     virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+    virtual FReply NativeOnAnalogValueChanged(const FGeometry& InGeometry, const FAnalogInputEvent& InAnalogEvent) override;
 
     UFUNCTION()
     void HandleNewCharacterClicked();
@@ -82,6 +88,9 @@ private:
 
     UPROPERTY()
     TObjectPtr<UWidgetSwitcher> ScreenSwitcher;
+
+    UPROPERTY()
+    TObjectPtr<UCanvasPanel> ShellCanvas;
 
     UPROPERTY()
     TObjectPtr<UCanvasPanel> DashboardScreen;
@@ -147,6 +156,12 @@ private:
     TObjectPtr<UCanvasPanel> ModalOverlay;
 
     UPROPERTY()
+    TObjectPtr<UCanvasPanel> GlobalOverlay;
+
+    UPROPERTY()
+    TArray<TObjectPtr<UCharacterCreatorCommandButtonWidget>> GlobalActionButtons;
+
+    UPROPERTY()
     TArray<TObjectPtr<UCharacterCreatorModalWidget>> ModalDialogs;
 
     UPROPERTY()
@@ -158,4 +173,5 @@ private:
     bool bLayoutBuilt = false;
     bool bRefreshingAppearance = false;
     TWeakObjectPtr<UWidget> LastFocusWidget;
+    TArray<TObjectPtr<UWidget>> ActiveFocusWidgets;
 };
