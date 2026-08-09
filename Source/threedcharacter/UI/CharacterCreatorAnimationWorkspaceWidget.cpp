@@ -10,6 +10,9 @@
 
 #include "CharacterCreatorPreviewActor.h"
 
+#define IsCommand IsAnimationCommand
+#define PreviewMessageForState AnimationPreviewMessageForState
+
 namespace CharacterCreatorAnimationUI
 {
     const FCharacterCreatorStylePalette& Palette = FCharacterCreatorUIStyle::GetPalette();
@@ -455,3 +458,6 @@ void UCharacterCreatorAnimationWorkspaceWidget::HandleCommand(FName CommandId)
         Session->SetStatusMessage(FText::FromString(TEXT("Inspecting source skeleton: SK_Mannequin")));
     }
 }
+
+#undef IsCommand
+#undef PreviewMessageForState

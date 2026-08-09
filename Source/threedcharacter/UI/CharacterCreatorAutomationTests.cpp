@@ -4,6 +4,13 @@
 #include "Misc/Paths.h"
 
 #include "UI/CharacterCreatorExportService.h"
+#if WITH_EDITOR
+#include "UI/CharacterCreatorEditorExportService.h"
+#include "CharacterCreatorGeneratedAssets.h"
+#include "Engine/Blueprint.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#endif
 #include "UI/CharacterCreatorImportService.h"
 #include "UI/CharacterCreatorSession.h"
 #include "UI/CharacterCreatorSaveGame.h"
@@ -16,12 +23,15 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 
 bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
 {
-    UCharacterCreatorSession* Session = NewObject<UCharacterCreatorSession>();
+    UCharacterCreatorSession* Session = NewObject<UCharacterCreatorSession>(GetTransientPackage());
     TestNotNull(TEXT("Session is constructible"), Session);
     if (!Session)
     {
         return false;
     }
+    // Asset creation/compilation can trigger GC while this test is running. Keep
+    // the transient session alive until all generated assets have been checked.
+    Session->AddToRoot();
 
     Session->InitializeDefaults();
     TestEqual(TEXT("Default screen is dashboard"), Session->GetScreen(), ECharacterCreatorScreen::Dashboard);
@@ -123,6 +133,10 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
     Session->SetControllerHint(FName(TEXT("TestAction")), FText::FromString(TEXT("Test hint")));
     TestTrue(TEXT("Controller hints are persisted"), Session->GetControllerHintState().Hints.Contains(FName(TEXT("TestAction"))));
 
+    const FLinearColor CustomPickerColor(0.21f, 0.47f, 0.83f, 1.0f);
+    Session->SetColorTarget(ECharacterCreatorColorTarget::PrimaryOutfit, CustomPickerColor);
+    TestTrue(TEXT("Color-picker RGB values persist on the selected target"), Session->GetColorTarget(ECharacterCreatorColorTarget::PrimaryOutfit).Equals(CustomPickerColor, 0.001f));
+
     FCharacterCreatorSettings Settings = Session->GetSettings();
     Settings.UIScale = 9.0f;
     Settings.AutosaveIntervalSeconds = 1;
@@ -222,17 +236,92 @@ bool FCharacterCreatorExportContractTest::RunTest(const FString& Parameters)
     FString Manifest;
     TestTrue(TEXT("Default state produces a manifest"), FCharacterCreatorExportService::BuildManifestJson(Appearance, Preset, Profile, Manifest));
     TestTrue(TEXT("Manifest contains the profile version"), Manifest.Contains(TEXT("profileVersion")));
-    FString BlueprintDescriptor;
-    FString DataAssetDescriptor;
-    FString PackageDescriptor;
-    TestTrue(TEXT("Blueprint descriptor is generated"), FCharacterCreatorExportService::BuildBlueprintDescriptor(Appearance, Preset, BlueprintDescriptor));
-    TestTrue(TEXT("Data Asset descriptor is generated"), FCharacterCreatorExportService::BuildDataAssetDescriptor(Appearance, Preset, DataAssetDescriptor));
-    TestTrue(TEXT("Package descriptor is generated"), FCharacterCreatorExportService::BuildPackageDescriptor(Appearance, Preset, Profile, PackageDescriptor));
-    TestTrue(TEXT("Blueprint descriptor identifies its format"), BlueprintDescriptor.Contains(TEXT("BlueprintDescriptor")));
-    TestTrue(TEXT("Data Asset descriptor identifies its format"), DataAssetDescriptor.Contains(TEXT("DataAssetDescriptor")));
-    TestTrue(TEXT("Package descriptor identifies its format"), PackageDescriptor.Contains(TEXT("PackageDescriptor")));
+    TestFalse(TEXT("Manifest no longer embeds fake asset descriptors"), Manifest.Contains(TEXT("Descriptor")));
     return true;
 }
+
+#if WITH_EDITOR
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FCharacterCreatorP17RealAssetsE2ETest,
+    "CharacterCreator.P17.RealAssetsE2E",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCharacterCreatorP17RealAssetsE2ETest::RunTest(const FString& Parameters)
+{
+    UCharacterCreatorSession* Session = NewObject<UCharacterCreatorSession>();
+    TestNotNull(TEXT("P17 session is constructible"), Session);
+    if (!Session)
+    {
+        return false;
+    }
+
+    Session->InitializeDefaults();
+    Session->SetAnimationSource(
+        FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/Manny/MM_Idle.MM_Idle")),
+        FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny")));
+    Session->SetAnimationRetargeter(FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Rigs/RTG_Mannequin.RTG_Mannequin")));
+    const bool bRetargeted = Session->ExecuteAnimationRetarget();
+    TestTrue(TEXT("P17 retarget step reaches target-ready state"), bRetargeted);
+    if (!bRetargeted)
+    {
+        AddError(FString::Printf(TEXT("P17 real retarget failed: %s"), *Session->GetAppearanceState().Animation.LastRetargetMessage.ToString()));
+    }
+    TestEqual(TEXT("P17 target animation path is recorded"), Session->GetAppearanceState().Animation.State, ECharacterCreatorAnimationState::TargetReady);
+    TestTrue(TEXT("P17 target animation is a real generated asset"), Session->GetAppearanceState().Animation.TargetAnimation.TryLoad() != nullptr);
+
+    FCharacterCreatorWeaponSetup Weapon = Session->GetWeaponSetup(ECharacterCreatorWeaponSlot::MainHand);
+    Weapon.WeaponId = FName(TEXT("TrainingBlade"));
+    Weapon.bEnabled = true;
+    Weapon.SocketName = FName(TEXT("hand_r"));
+    Session->SetWeaponSetup(ECharacterCreatorWeaponSlot::MainHand, Weapon);
+    TestTrue(TEXT("P17 weapon setup is enabled"), Session->GetWeaponSetup(ECharacterCreatorWeaponSlot::MainHand).bEnabled);
+    TestTrue(TEXT("P17 skeleton inspection succeeds"), Session->InspectSkeletons());
+
+    FCharacterCreatorExportProfile Profile;
+    Profile.bGenerateBlueprint = true;
+    Profile.bGenerateDataAsset = true;
+    Profile.bGeneratePackage = true;
+    const FString Destination = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("CharacterCreator"), TEXT("P17"));
+    IFileManager::Get().MakeDirectory(*Destination, true);
+    const FGuid ExpectedPresetId = Session->GetActivePreset().PresetId;
+
+    FCharacterCreatorRealExportResult Result;
+    const bool bGeneratedDeliverables = FCharacterCreatorEditorExportService::GenerateDeliverables(
+        Session->GetAppearanceStateNative(), Session->GetActivePreset(), Profile, Destination, Result);
+    TestTrue(TEXT("P17 generates real Unreal deliverables"), bGeneratedDeliverables);
+    if (!bGeneratedDeliverables)
+    {
+        AddError(FString::Printf(TEXT("P17 real export failed: %s"), *Result.ErrorMessage));
+    }
+    TestTrue(TEXT("P17 generated Blueprint path is valid"), Result.BlueprintAsset.IsValid());
+    TestTrue(TEXT("P17 generated Data Asset path is valid"), Result.DataAsset.IsValid());
+    TestTrue(TEXT("P17 generated content path is in project Content"), Result.GeneratedContentPath.StartsWith(TEXT("/Game/CharacterCreator/Generated/")));
+    TestTrue(TEXT("P17 staged package contains files"), Result.StagedFiles.Num() >= 2);
+    TestTrue(TEXT("P17 package manifest exists"), FPaths::FileExists(FPaths::Combine(Result.StagedPackageDirectory, TEXT("ActiveCharacter.package-manifest.json"))));
+
+    UBlueprint* Blueprint = Cast<UBlueprint>(Result.BlueprintAsset.TryLoad());
+    UCharacterCreatorAppearanceDataAsset* DataAsset = Cast<UCharacterCreatorAppearanceDataAsset>(Result.DataAsset.TryLoad());
+    TestNotNull(TEXT("P17 Blueprint is a real UBlueprint asset"), Blueprint);
+    TestNotNull(TEXT("P17 Data Asset is a real UPrimaryDataAsset"), DataAsset);
+    if (IsValid(Blueprint))
+    {
+        Blueprint->AddToRoot();
+        TestTrue(TEXT("P17 Blueprint derives from generated character parent"), Blueprint->ParentClass && Blueprint->ParentClass->IsChildOf(ACharacterCreatorGeneratedCharacter::StaticClass()));
+    }
+    if (IsValid(DataAsset))
+    {
+        DataAsset->AddToRoot();
+        TestEqual(TEXT("P17 Data Asset stores the active preset"), DataAsset->PresetId, ExpectedPresetId);
+        TestFalse(TEXT("P17 Data Asset stores an empty skeletal mesh"), DataAsset->Appearance.Assets.SkeletalMesh.IsNull());
+    }
+    // Keep the generated objects rooted through commandlet shutdown. The editor
+    // may replace package objects during SavePackage, so removing roots here can
+    // dereference stale UObject handles after an asset reload.
+    return true;
+}
+
+#endif
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
     FCharacterCreatorImportContractTest,

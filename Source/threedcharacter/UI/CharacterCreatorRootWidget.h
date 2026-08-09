@@ -50,10 +50,14 @@ private:
     void ApplyPreviewRenderTarget();
     void ApplyPreviewState(ECharacterCreatorPreviewState NewState, const FText& Message);
     void HandleWorkflowCommand(FName CommandId);
+    void HandleWorkflowModalRequested(FName DialogId);
+    void HandleColorPickerChannelChanged(ECharacterCreatorParameter Parameter, float Value);
     void OpenModalDialog(FName DialogId, const FString& Title, const FString& Message, const TArray<TPair<FName, FString>>& Actions);
     void HandleModalCommand(FName CommandId);
+    void CloseTopModalAndRestoreFocus();
     void BuildFocusGraphForActiveScreen();
     bool MoveFocusByDelta(int32 Delta);
+    bool MoveFocusByDirection(FName Direction);
     void HandleGamepadCameraInput(const FAnalogInputEvent& AnalogEvent);
 
     virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
@@ -91,6 +95,9 @@ private:
 
     UPROPERTY()
     TObjectPtr<UCanvasPanel> ShellCanvas;
+
+    UPROPERTY()
+    TObjectPtr<UScaleBox> RootScaleBox;
 
     UPROPERTY()
     TObjectPtr<UCanvasPanel> DashboardScreen;
@@ -168,10 +175,15 @@ private:
     TArray<TObjectPtr<UCharacterCreatorSliderWidget>> BodyParameterSliders;
 
     UPROPERTY()
+    TArray<TObjectPtr<UCharacterCreatorSliderWidget>> ColorPickerSliders;
+
+    UPROPERTY()
     TArray<TObjectPtr<UTextBlock>> BodyParameterValueLabels;
 
     bool bLayoutBuilt = false;
     bool bRefreshingAppearance = false;
+    FLinearColor PendingColorPickerColor = FLinearColor::White;
+    ECharacterCreatorColorTarget PendingColorPickerTarget = ECharacterCreatorColorTarget::Skin;
     TWeakObjectPtr<UWidget> LastFocusWidget;
     TArray<TObjectPtr<UWidget>> ActiveFocusWidgets;
 };

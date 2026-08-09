@@ -12,17 +12,17 @@
 
 > **Current-state audit — 2026-08-09 (America/New_York)**
 >
-> This document is still the product/design target. The repository currently contains a working Unreal C++ vertical slice, not the completed Penpot production system described below.
+> This document remains the product/design target, with the P17–P19 implementation/evidence delta recorded here and in the linked evidence records.
 >
 > **Repository baseline:** branch `agent/character-creator-foundation`, commit `b8c47d8` (`Implement character creator workflow foundation`).
 >
-> **Implemented and verified:** UE 5.7 editor target build; game-instance-owned character-creator session; dashboard and body/face editing; live Sidekick render-target preview with async asset loading and fallback states; outfit/hair/material/weapon-IK workflow routing; animation/technical/production workspace routing; versioned save/autosave/preset APIs; import-directory validation; JSON manifest export; modal focus management; keyboard/gamepad shortcut handling; four `CharacterCreator.*` automation tests.
+> **Implemented and verified:** UE 5.7 editor target build; game-instance-owned character-creator session; live Sidekick render-target preview with async loading/fallback states; real Manny-to-Sidekick IK retargeted animation generation; weapon/skeleton validation; real Blueprint and Data Asset generation; staged Unreal package files plus metadata manifest; settings persistence/frame-rate integration; modal focus trapping/restoration; high-contrast/text-scale/UIScale handling; keyboard/gamepad navigation and preview camera controls; five `CharacterCreator.*` automation tests.
 >
-> **Present as foundation or scaffold:** most named workspaces are routed C++ screens with reusable panels, labels, command buttons, and status summaries. Their domain operations are not yet implemented: Blend Space/Animation Blueprint/montage generation, retarget execution, socket and rig editing, physics simulation, gameplay movement/combat, LOD metrics, asset browsing/import, randomization, settings persistence, portrait capture, and Unreal package/Blueprint/Data Asset export.
+> **Remaining foundation/scaffold:** most named workspaces are still native C++ screens with simplified panels and status summaries rather than Penpot-faithful production layouts. Blend Space/Animation Blueprint/montage authoring, physics simulation, gameplay movement/combat, portrait capture, arbitrary HSV color editing, and dedicated browser/preset/randomization compositions remain partial. The real P17 delivery path is implemented; the visual parity and screenshot limitations are recorded in P18/P19 evidence.
 >
-> **P00–P04 evidence present:** Penpot MCP acceptance evidence is recorded in `docs/penpot/P00_PENPOT_MCP_ACCEPTANCE.md`; the 39-screen audit is in the three P01 reports; P02 architecture/flow is in `docs/penpot/P02_PRODUCT_ARCHITECTURE_AND_FLOW_MAP.md`; P03 foundations are in `docs/penpot/P03_PENPOT_FOUNDATIONS.md`; and P04 components are in `docs/penpot/P04_PENPOT_COMPONENT_INVENTORY.md`. The connected editable file is `New File 1`; visual comparison evidence, a complete gamepad focus graph, and the Unreal authoring/export pipeline remain outstanding. The reference directory contains 39 individual screens plus 2 contact sheets; no ZIP was found.
+> **Evidence present:** P00–P04 Penpot acceptance/audit/design documents remain under `docs/penpot/`; P18 visual QA is in `docs/P18_VISUAL_QA.md`; P19 verification and known deviations are in `docs/P19_VERIFICATION_RECORD.md`. The reference directory contains 39 individual screens plus 2 contact sheets; no ZIP was found. Visual parity is explicitly partial, while the real P17 authoring/export path is verified.
 >
-> **Verification snapshot:** `Build.bat threedcharacterEditor Win64 Development` succeeded; headless `Automation RunTests CharacterCreator` found and passed 4 tests: `CharacterCreator.Export.Contract`, `CharacterCreator.Import.FreeAnimationsPack`, `CharacterCreator.Session.Foundation`, and `CharacterCreator.UIAndSave.Contract`. These tests verify contracts and content validation, not visual completeness or full Unreal authoring behavior.
+> **Verification snapshot:** `Build.bat threedcharacterEditor Win64 Development -Project="threedcharacter.uproject" -WaitMutex` succeeded; headless `Automation RunTests CharacterCreator` exited 0 and passed 5 tests, including `CharacterCreator.P17.RealAssetsE2E`. The P17 test loads the generated Blueprint/Data Asset and staged package files after running real Manny → Sidekick retargeting. Visual screenshot capture was attempted but the non-headless game render did not exit cleanly; no screenshot is claimed as captured.
 
 ## Current implementation position
 
@@ -35,23 +35,23 @@ The project is at the transition from foundation work to functional workspace im
 | Runtime/UI shell | `Source/threedcharacter/UI/CharacterCreatorRootWidget.cpp`, `CharacterCreatorUIFramework.*` | Native runtime UMG/C++ shell at a fixed 1440×810 design canvas, with shared styling helpers and routed screens |
 | Character state | `CharacterCreatorSession.*`, `CharacterCreatorSubsystem.*`, `CharacterCreatorSaveGame.*` | Centralized appearance/loadout/IK/animation/preset/onboarding state with save/autosave APIs |
 | Preview | `CharacterCreatorPreviewActor.*`, `Content/Synty/SidekickCharacters/` | Live scene capture, Sidekick mesh/material references, modular outfit/hair components, camera modes, async loading/fallback |
-| Animation content | `Content/FreeAnimationsPack/` | 95 imported `.uasset` packages, including Manny/Quinn animations, ABPs, Blend Spaces, IK/Control Rig, and retargeting assets; source assets are selected but not retargeted/generated into Sidekick output |
-| Import/export | `CharacterCreatorImportService.*`, `CharacterCreatorExportService.*` | File/package validation and JSON manifest writing; no asset copy/import pipeline or Unreal deliverable generation |
-| Tests | `Source/threedcharacter/UI/CharacterCreatorAutomationTests.cpp` | Four passing contract tests covering session, export, import validation, UI helper/save compatibility |
-| Design evidence | `UE_5_7_1_Character_Creator_ALL_UI_UX_Screens/` | 39 individual references + 2 contact sheets are present; no Penpot artifacts or required evidence docs exist |
-| Module boundary | `Source/threedcharacter/threedcharacter.Build.cs`, `threedcharacter.uproject` | One unified runtime module with Core/Engine/UMG/Slate/Json dependencies; no separate editor, authoring, data, or UI module exists yet |
+| Animation content | `Content/FreeAnimationsPack/` | 95 imported `.uasset` packages, including Manny/Quinn animations, ABPs, Blend Spaces, IK/Control Rig, and retargeting assets; P17 generates a real Sidekick target animation under `/Game/MM_Idle_Retargeted*` |
+| Import/export | `CharacterCreatorImportService.*`, `CharacterCreatorExportService.*`, `CharacterCreatorEditorExportService.*` | JSON remains metadata; editor-only generation creates real `BP_*`/`DA_*` assets and stages `.uasset` package files |
+| Tests | `Source/threedcharacter/UI/CharacterCreatorAutomationTests.cpp` | Five passing tests covering session, export, import validation, UI/save compatibility, and real P17 assets-to-delivery flow |
+| Design evidence | `UE_5_7_1_Character_Creator_ALL_UI_UX_Screens/`, `docs/P18_VISUAL_QA.md`, `docs/P19_VERIFICATION_RECORD.md` | 39 individual references + 2 contact sheets are inventoried; QA and known deviations are recorded, with screenshot capture limitation called out |
+| Module boundary | `Source/threedcharacter/threedcharacter.Build.cs`, `threedcharacter.uproject` | One unified module with runtime UI/state and editor-only AssetTools/IKRig/Kismet/UnrealEd generation dependencies; split remains intentionally deferred |
 
 ### Current architectural constraints
 
 - The runtime is intentionally unified. Do not split modules until the preview, session/persistence, editor-tooling, and asset-generation ownership boundaries are exercised and documented.
 - The current UI is native C++ UMG constructed at runtime; there are no tracked Widget Blueprint screens or Penpot-to-UMG handoff artifacts.
 - `Content/` is ignored by the current Git surface, so the local Sidekick/FAB assets are available to the working project but are not represented in the tracked source diff.
-- Existing animation assets are Manny/Quinn source content. The current code records source paths and retargeting state; it does not yet prove a compatible Sidekick target animation or generated animation system.
+- Existing animation assets are Manny/Quinn source content. The editor path now proves a compatible Sidekick target animation and saves it as a real asset; higher-level Blend Space/Animation Blueprint/montage graph generation remains partial.
 
 ### Known verification caveats
 
-- The latest headless editor log reports a non-blocking Python exposure warning because `ECharacterCreatorAnimationState` and the generated `CharacterCreatorAnimationState` name collide when exposed to Python. Resolve or explicitly document this before expanding scripting/editor automation.
-- The animation workspace currently stores the Manny mesh path `/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin` in the field named `SourceSkeleton`. Validate the actual `USkeleton` asset path before implementing retarget execution.
+- The animation enum now uses the explicit Python script name `CharacterCreatorAnimationStateEnum`; the previous collision warning is addressed in source. Re-check generated-header/editor logs after any future reflection changes.
+- The animation workspace field named `SourceSkeleton` stores the source `USkeletalMesh` used by the editor retarget operation; the working P17 asset is `/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny`. The field name should be clarified in a future UI/data-model pass.
 - `Config/DefaultEngine.ini` still uses the engine OpenWorld template as `GameDefaultMap`; the character creator is launched through the global game mode/HUD rather than a dedicated creator map.
 
 ### Status vocabulary used below
@@ -2309,7 +2309,7 @@ Exit criteria:
 
 ## P13 — Settings
 
-**Current status: Scaffold.** A settings workspace exposes UI-scale, gamepad, and onboarding commands that currently update status/reset onboarding. No settings model, persistence, Unreal integration path, accessibility, backup, or performance configuration exists.
+**Current status: Partial / hardened foundation.** Settings are modeled and sanitized, loaded/saved by the subsystem, applied to the root ScaleBox/text widgets, wired to `UGameUserSettings` frame-rate limits, and exposed for high contrast, reduced motion, gamepad, D-pad/analog navigation, camera sensitivity, autosave, backup, import, and real export profiles. The screen remains visually simplified versus the reference.
 
 Tasks:
 
@@ -2332,7 +2332,7 @@ Exit criteria:
 
 ## P14 — Validation & Export
 
-**Current status: Partial.** Validation covers core mesh/material/loadout references and animation-preview warnings; export writes a validated JSON manifest under `Saved/CharacterCreator/Exports`. There is no validation dashboard, issue list/one-click fix system, export history, Blueprint/Data Asset/package generation, or complete Unreal-ready delivery.
+**Current status: Complete for the verified P17 delivery path; partial for the full product UI.** Validation covers core mesh/material/loadout references and animation warnings. In editor builds, export creates a real `BP_<SafeName>` Blueprint derived from `ACharacterCreatorGeneratedCharacter`, a real `DA_<SafeName>` `UPrimaryDataAsset`, and stages saved `.uasset` package files alongside an explicit metadata manifest. A dedicated Penpot-faithful validation dashboard, issue history, and one-click fix system remain partial.
 
 Tasks:
 
@@ -2352,7 +2352,7 @@ Exit criteria:
 
 ## P15 — Modals & States
 
-**Current status: Partial.** A modal manager with focus restoration and concrete new-character, import, export, onboarding, save-template, and load-error dialogs exists. The full required modal/state inventory—color picker, replace/conflict/dependency/skeleton dialogs, empty/success/warning/validation/export states—is not complete.
+**Current status: Partial / hardened foundation.** The modal manager has concrete new-character, import, dependency/conflict, color-picker, export, onboarding, save-template, load-error, preset, gamepad, and success/error dialogs. Modal action buttons form a focus trap, Escape/B restores the previous screen focus graph, and modal shoulders are blocked. Arbitrary color editing and exact Penpot state styling remain deviations.
 
 Tasks:
 
@@ -2372,7 +2372,7 @@ Exit criteria:
 
 ## P16 — Gamepad UX
 
-**Current status: Partial / early foundation.** UI-only input, keyboard focus, modal focus stack, Escape, shoulder-button workspace cycling, and apply/revert face-button shortcuts exist. A complete focus graph, D-pad/analog behavior, controller overlay/hints, viewport camera controls, and per-control verification are absent.
+**Current status: Partial / hardened foundation.** Keyboard focus, modal focus stack, Escape/B cancel/revert, shoulder-button workspace cycling, directional nearest-neighbor D-pad/left-stick focus movement, modal analog trapping, A confirmation, and right-stick preview camera orbit are implemented. Screenshot/per-control device verification is not available in the current headless evidence path.
 
 Tasks:
 
@@ -2392,7 +2392,7 @@ Exit criteria:
 
 ## P17 — Prototype Flows
 
-**Current status: Partial.** New-character, onboarding, import-validation, save-template, navigation, save/revert, and export-dialog routes exist. The complete new-character, animation, weapon, retarget/validate, final-delivery, and gamepad flows are not end-to-end functional.
+**Current status: Complete for the verified real-asset flow.** `CharacterCreator.P17.RealAssetsE2E` runs Manny idle → source mesh/retargeter → real Sidekick IK retargeted animation → weapon metadata/socket setup → skeleton inspection → validation → real Blueprint/Data Asset generation → staged package files and metadata manifest. UI-level authored graph generation remains outside this acceptance test.
 
 Tasks:
 
@@ -2412,7 +2412,7 @@ Exit criteria:
 
 ## P18 — Visual QA
 
-**Current status: Not started.** No Penpot comparison pass, per-screen visual/structural review, responsive-size review, or screenshot evidence is present. Passing automation tests does not satisfy this phase.
+**Current status: Complete as an evidence pass; visual parity remains partial.** All 39 source references are mapped and reviewed against current routes, modal states, responsive ScaleBox behavior, focus behavior, clipping risks, and component reuse. Exact visual discrepancies and the failed non-headless screenshot capture are recorded in `docs/P18_VISUAL_QA.md`; they are not silently treated as resolved.
 
 Tasks:
 
@@ -2434,7 +2434,7 @@ Exit criteria:
 
 ## P19 — Completion Evidence
 
-**Current status: Partial.** P00–P04 evidence documents now exist under `docs/penpot/`. Visual comparison evidence, Unreal handoff detail, and completion-evidence packaging remain to be created.
+**Current status: Complete for the current implementation slice.** The master plan, P18 per-screen QA, P17 real-asset outputs, build/test commands, generated deliverable paths, screenshot attempt, known upstream asset warnings, and unresolved visual/product deviations are recorded in `docs/P19_VERIFICATION_RECORD.md`.
 
 Tasks:
 
@@ -2499,7 +2499,7 @@ A screen is complete only when all applicable items pass:
 
 # 63. Overall Acceptance Criteria
 
-**Current status: Not achieved.** The repository has 39/39 individual references audited, 39 native Penpot screen boards structurally scanned, 21/21 declared runtime screens routable, 4/4 current automation tests passing, and a verified UE 5.7 editor build. It has 1 verified Penpot MCP acceptance run and 7 P00–P04 evidence documents, while visual comparison evidence, a complete gamepad focus graph, and the Unreal authoring/export pipeline remain incomplete. The criteria below remain the definition of done, not a claim that the current slice satisfies them.
+**Current status: Not achieved for the full product definition.** The repository has 39/39 individual references audited, 39 native Penpot screen boards structurally scanned, 21/21 declared runtime screens routable, five `CharacterCreator.*` automation tests passing, and a verified UE 5.7 editor build. Real P17 retarget/export is verified and P18/P19 evidence is recorded, but visual parity, complete graph authoring, dedicated browser/preset/randomization compositions, arbitrary color editing, and several production tools remain incomplete. The criteria below remain the definition of done, not a claim that the current slice satisfies them.
 
 The project design phase is not complete until:
 
@@ -2546,12 +2546,13 @@ The project design phase is not complete until:
 
 # 64. Current Next Codex Task
 
-The original “start with P00” recommendation is still valid as a prerequisite, but it is no longer an accurate description of repository progress. The next work should close the design-source gap and then turn the routed engineering foundations into verified product behavior.
+P17–P19 are now evidenced. The next work should close the Penpot visual/source gap and turn the remaining routed engineering foundations into verified product behavior.
 
 ## Immediate sequence
 
-1. **P08 — Animation functional slice:** implement one complete source-to-Sidekick retarget path, then use that path to validate locomotion, Blend Space, Animation Blueprint, and preview behavior before expanding the authoring surface.
-2. **P14 — Validation and export:** extend the current JSON manifest foundation into real Unreal deliverables only after the animation and asset contracts are real.
+1. **P18 follow-up — Visual fidelity:** replace simplified native panels with Penpot-faithful layouts, typography, thumbnails, graph/timeline views, and captured 1280×720/1440×810/1920×1080 comparisons.
+2. **P14/P15 follow-up — Production tools and states:** add arbitrary color editing, dedicated browser/preset/randomization compositions, and higher-level Blend Space/Animation Blueprint/montage authoring.
+3. **P16 follow-up — Device QA:** verify the directional focus graph with a physical gamepad and capture the reference overlay/focus states.
 
 ## Required next handoff
 

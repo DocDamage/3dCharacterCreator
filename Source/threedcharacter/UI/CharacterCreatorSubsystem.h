@@ -98,6 +98,7 @@ private:
     FString SettingsSlotName = TEXT("CharacterCreator_Settings");
     FString ProjectCatalogSlotName = TEXT("CharacterCreator_ProjectCatalog");
     bool bAutosavePending = false;
+    bool bPreferencesReady = false;
 
     TArray<FCharacterCreatorValidationIssue> LastValidationIssues;
 };

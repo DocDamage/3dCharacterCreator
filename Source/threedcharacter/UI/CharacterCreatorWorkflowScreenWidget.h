@@ -13,6 +13,8 @@ class UCharacterCreatorCommandButtonWidget;
 class ACharacterCreatorPreviewActor;
 enum class ECharacterCreatorPreviewState : uint8;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorWorkflowModalRequested, FName);
+
 UCLASS()
 class THREEDCHARACTER_API UCharacterCreatorWorkflowScreenWidget : public UUserWidget
 {
@@ -23,6 +25,8 @@ public:
     void InitializeWithPreviewActor(ACharacterCreatorPreviewActor* InPreviewActor);
     void SetWorkflowScreen(ECharacterCreatorScreen InScreen);
     void FocusFirstControl();
+
+    FOnCharacterCreatorWorkflowModalRequested OnModalRequested;
 
 protected:
     virtual void NativeConstruct() override;

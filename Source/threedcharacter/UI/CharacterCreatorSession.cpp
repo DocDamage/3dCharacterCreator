@@ -1,9 +1,16 @@
 #include "UI/CharacterCreatorSession.h"
 
+#include "Animation/AnimSequenceBase.h"
 #include "Animation/Skeleton.h"
+#include "Engine/SkeletalMesh.h"
 #include "Misc/Paths.h"
+#include "Misc/PackageName.h"
 #include "Math/RandomStream.h"
 #include "PhysicsEngine/PhysicsAsset.h"
+
+#if WITH_EDITOR
+#include "UI/CharacterCreatorEditorExportService.h"
+#endif
 
 namespace
 {
@@ -60,7 +67,7 @@ FCharacterCreatorLoadoutState::FCharacterCreatorLoadoutState()
 
 FCharacterCreatorAnimationState::FCharacterCreatorAnimationState()
     : SourceAnimation(FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/Manny/MM_Idle.MM_Idle")))
-    , SourceSkeleton(FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin")))
+    , SourceSkeleton(FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Meshes/SKM_Manny.SKM_Manny")))
     , State(ECharacterCreatorAnimationState::SourceReady)
 {
 }
@@ -1345,6 +1352,49 @@ bool UCharacterCreatorSession::ExecuteAnimationRetarget()
         return false;
     }
 
+#if WITH_EDITOR
+    FSoftObjectPath GeneratedTargetAnimation;
+    FString RealRetargetError;
+    const bool bGeneratedRealTarget = FCharacterCreatorEditorExportService::GenerateRetargetedAnimation(AppearanceState, GeneratedTargetAnimation, RealRetargetError);
+    if (bGeneratedRealTarget)
+    {
+        AnimationState.State = ECharacterCreatorAnimationState::Retargeting;
+        AnimationState.MappedBoneCount = 65;
+        AnimationState.LastRetargetMessage = FText::FromString(TEXT("Source animation retargeted to a real Sidekick target animation asset."));
+        AnimationState.TargetAnimation = GeneratedTargetAnimation;
+    }
+    else if (FPackageName::DoesPackageExist(AnimationState.SourceSkeleton.GetLongPackageName()) &&
+             FPackageName::DoesPackageExist(AnimationState.SourceAnimation.GetLongPackageName()) &&
+             FPackageName::DoesPackageExist(AppearanceState.Assets.SkeletalMesh.ToSoftObjectPath().GetLongPackageName()) &&
+             Cast<USkeletalMesh>(AnimationState.SourceSkeleton.TryLoad()) &&
+             Cast<UAnimSequenceBase>(AnimationState.SourceAnimation.TryLoad()) &&
+             Cast<USkeletalMesh>(AppearanceState.Assets.SkeletalMesh.ToSoftObjectPath().TryLoad()))
+    {
+        // A valid editor asset set must never silently become a descriptor-only
+        // result. Surface a hard failure when real retargeting was attempted.
+        AnimationState.State = ECharacterCreatorAnimationState::Failed;
+        AnimationState.LastRetargetMessage = FText::FromString(RealRetargetError.IsEmpty()
+            ? TEXT("The editor could not generate a real target animation asset.")
+            : RealRetargetError);
+        AnimationState.RetargetWarnings.Add(FName(TEXT("RealRetargetFailed")));
+        AppearanceState.bHasUnsavedChanges = true;
+        OnAppearanceChanged.Broadcast(AppearanceState);
+        SetStatusMessage(AnimationState.LastRetargetMessage);
+        return false;
+    }
+    else
+    {
+        // Keep the lightweight session contract usable for unsaved/placeholder
+        // paths; the P17 editor flow above is the real-asset path.
+        AnimationState.State = ECharacterCreatorAnimationState::Retargeting;
+        AnimationState.MappedBoneCount = 65;
+        AnimationState.LastRetargetMessage = FText::FromString(TEXT("Source animation mapped to the Sidekick target skeleton; editor assets are not loaded yet."));
+        AnimationState.TargetAnimation = FSoftObjectPath(FString::Printf(
+            TEXT("/Game/CharacterCreator/Generated/Animations/%s_Retargeted.%s_Retargeted"),
+            *FPaths::GetBaseFilename(AnimationState.SourceAnimation.ToString()),
+            *FPaths::GetBaseFilename(AnimationState.SourceAnimation.ToString())));
+    }
+#else
     AnimationState.State = ECharacterCreatorAnimationState::Retargeting;
     AnimationState.MappedBoneCount = 65;
     AnimationState.LastRetargetMessage = FText::FromString(TEXT("Source animation mapped to the Sidekick target skeleton."));
@@ -1352,6 +1402,7 @@ bool UCharacterCreatorSession::ExecuteAnimationRetarget()
         TEXT("/Game/CharacterCreator/Generated/Animations/%s_Retargeted.%s_Retargeted"),
         *FPaths::GetBaseFilename(AnimationState.SourceAnimation.ToString()),
         *FPaths::GetBaseFilename(AnimationState.SourceAnimation.ToString())));
+#endif
     AnimationState.State = ECharacterCreatorAnimationState::TargetReady;
     AppearanceState.bHasUnsavedChanges = true;
     OnAppearanceChanged.Broadcast(AppearanceState);

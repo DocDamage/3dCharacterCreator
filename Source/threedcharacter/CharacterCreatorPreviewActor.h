@@ -45,6 +45,8 @@ public:
 
     void InitializeWithSession(UCharacterCreatorSession* InSession);
 
+    void ApplyPerformanceSettings(const FCharacterCreatorSettings& Settings);
+
     UFUNCTION(BlueprintPure, Category = "Character Creator|Preview")
     UTextureRenderTarget2D* GetPreviewRenderTarget() const { return PreviewRenderTarget; }
 

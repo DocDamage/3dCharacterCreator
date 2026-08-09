@@ -131,7 +131,7 @@ enum class ECharacterCreatorWeaponSlot : uint8
     Back
 };
 
-UENUM(BlueprintType)
+UENUM(BlueprintType, meta = (ScriptName = "CharacterCreatorAnimationStateEnum"))
 enum class ECharacterCreatorAnimationState : uint8
 {
     Unassigned,

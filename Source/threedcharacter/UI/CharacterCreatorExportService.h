@@ -66,7 +66,4 @@ struct THREEDCHARACTER_API FCharacterCreatorExportService
     static void ValidateAppearance(const FCharacterAppearanceState& Appearance, const FCharacterCreatorExportProfile& Profile, TArray<FCharacterCreatorValidationIssue>& OutIssues);
     static bool HasErrors(const TArray<FCharacterCreatorValidationIssue>& Issues);
     static bool BuildManifestJson(const FCharacterAppearanceState& Appearance, const FCharacterPreset& Preset, const FCharacterCreatorExportProfile& Profile, FString& OutJson);
-    static bool BuildBlueprintDescriptor(const FCharacterAppearanceState& Appearance, const FCharacterPreset& Preset, FString& OutJson);
-    static bool BuildDataAssetDescriptor(const FCharacterAppearanceState& Appearance, const FCharacterPreset& Preset, FString& OutJson);
-    static bool BuildPackageDescriptor(const FCharacterAppearanceState& Appearance, const FCharacterPreset& Preset, const FCharacterCreatorExportProfile& Profile, FString& OutJson);
 };

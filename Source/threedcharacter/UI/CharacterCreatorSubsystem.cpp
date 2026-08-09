@@ -1,12 +1,16 @@
 #include "UI/CharacterCreatorSubsystem.h"
 
 #include "Kismet/GameplayStatics.h"
+#include "GameFramework/GameUserSettings.h"
 #include "Engine/World.h"
 #include "HAL/FileManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "TimerManager.h"
 #include "UI/CharacterCreatorExportService.h"
+#if WITH_EDITOR
+#include "UI/CharacterCreatorEditorExportService.h"
+#endif
 #include "UI/CharacterCreatorImportService.h"
 #include "UI/CharacterCreatorSaveGame.h"
 #include "UI/CharacterCreatorSession.h"
@@ -22,6 +26,8 @@ void UCharacterCreatorSubsystem::Initialize(FSubsystemCollectionBase& Collection
         Session->OnSettingsChanged.AddUObject(this, &UCharacterCreatorSubsystem::HandleSettingsChanged);
         LoadPreferences();
         LoadProjectCatalog();
+        bPreferencesReady = true;
+        HandleSettingsChanged(Session->GetSettings());
     }
 }
 
@@ -341,7 +347,7 @@ bool UCharacterCreatorSubsystem::ExportCurrentDeliverables(const FCharacterCreat
     const FCharacterPreset Preset = Session->GetActivePreset();
     bool bWritten = true;
 
-    auto WriteDescriptor = [&bWritten, &OutputDirectory](const FString& Filename, const FString& Content)
+    auto WriteManifest = [&bWritten, &OutputDirectory](const FString& Filename, const FString& Content)
     {
         bWritten = bWritten && FFileHelper::SaveStringToFile(Content, *FPaths::Combine(OutputDirectory, Filename));
     };
@@ -350,30 +356,27 @@ bool UCharacterCreatorSubsystem::ExportCurrentDeliverables(const FCharacterCreat
     {
         FString ManifestJson;
         bWritten = FCharacterCreatorExportService::BuildManifestJson(Appearance, Preset, Profile, ManifestJson);
-        if (bWritten) WriteDescriptor(TEXT("ActiveCharacter.json"), ManifestJson);
+        if (bWritten) WriteManifest(TEXT("ActiveCharacter.json"), ManifestJson);
     }
-    if (bWritten && Profile.bGenerateBlueprint)
+
+    if (bWritten && (Profile.bGenerateBlueprint || Profile.bGenerateDataAsset || Profile.bGeneratePackage))
     {
-        FString BlueprintJson;
-        bWritten = FCharacterCreatorExportService::BuildBlueprintDescriptor(Appearance, Preset, BlueprintJson);
-        if (bWritten) WriteDescriptor(TEXT("ActiveCharacter.Blueprint.json"), BlueprintJson);
-    }
-    if (bWritten && Profile.bGenerateDataAsset)
-    {
-        FString DataAssetJson;
-        bWritten = FCharacterCreatorExportService::BuildDataAssetDescriptor(Appearance, Preset, DataAssetJson);
-        if (bWritten) WriteDescriptor(TEXT("ActiveCharacter.DataAsset.json"), DataAssetJson);
-    }
-    if (bWritten && Profile.bGeneratePackage)
-    {
-        FString PackageJson;
-        bWritten = FCharacterCreatorExportService::BuildPackageDescriptor(Appearance, Preset, Profile, PackageJson);
-        if (bWritten) WriteDescriptor(TEXT("ActiveCharacter.Package.json"), PackageJson);
+#if WITH_EDITOR
+        FCharacterCreatorRealExportResult RealExport;
+        bWritten = FCharacterCreatorEditorExportService::GenerateDeliverables(Appearance, Preset, Profile, OutputDirectory, RealExport);
+        if (!bWritten && !RealExport.ErrorMessage.IsEmpty())
+        {
+            Session->SetStatusMessage(FText::FromString(RealExport.ErrorMessage));
+        }
+#else
+        bWritten = false;
+        Session->SetStatusMessage(FText::FromString(TEXT("Real Unreal deliverables require an editor export run.")));
+#endif
     }
 
     const FText Summary = bWritten
-        ? FText::FromString(FString::Printf(TEXT("Export complete • %d deliverables written"), Deliverables.Num()))
-        : FText::FromString(TEXT("Export failed while writing a deliverable"));
+        ? FText::FromString(FString::Printf(TEXT("Export complete • %d real deliverables written"), Deliverables.Num()))
+        : FText::FromString(TEXT("Export failed while generating a real Unreal deliverable"));
     Session->SetStatusMessage(Summary);
     AddExportHistory(bWritten, OutputDirectory, Deliverables, Summary);
     return bWritten;
@@ -567,6 +570,17 @@ void UCharacterCreatorSubsystem::HandleSettingsChanged(const FCharacterCreatorSe
     if (NewSettings.bAutosaveEnabled)
     {
         EnsureAutosaveTimer();
+    }
+
+    if (UGameUserSettings* GameUserSettings = GEngine ? GEngine->GetGameUserSettings() : nullptr)
+    {
+        GameUserSettings->SetFrameRateLimit(static_cast<float>(NewSettings.TargetFrameRate));
+        GameUserSettings->ApplySettings(false);
+    }
+
+    if (bPreferencesReady)
+    {
+        SavePreferences();
     }
 }
 

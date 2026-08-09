@@ -19,5 +19,19 @@ public class threedcharacter : ModuleRules
                 "SlateCore",
                 "Json"
             });
+
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.AddRange(
+                new string[]
+                {
+                    "AssetTools",
+                    "IKRig",
+                    "IKRigEditor",
+                    "Kismet",
+                    "KismetCompiler",
+                    "UnrealEd"
+                });
+        }
     }
 }

@@ -171,6 +171,29 @@ void ACharacterCreatorPreviewActor::InitializeWithSession(UCharacterCreatorSessi
     }
 }
 
+void ACharacterCreatorPreviewActor::ApplyPerformanceSettings(const FCharacterCreatorSettings& Settings)
+{
+    const int32 ForcedPreviewLOD = Settings.bUsePreviewLOD ? 1 : 0;
+    if (CharacterMesh)
+    {
+        CharacterMesh->SetForcedLOD(ForcedPreviewLOD);
+    }
+    if (OutfitMesh)
+    {
+        OutfitMesh->SetForcedLOD(ForcedPreviewLOD);
+    }
+    if (HairMesh)
+    {
+        HairMesh->SetForcedLOD(ForcedPreviewLOD);
+    }
+
+    if (Settings.bReducedMotion && PreviewCamera)
+    {
+        PreviewCamera->PostProcessSettings.bOverride_MotionBlurAmount = true;
+        PreviewCamera->PostProcessSettings.MotionBlurAmount = 0.0f;
+    }
+}
+
 void ACharacterCreatorPreviewActor::BeginPlay()
 {
     Super::BeginPlay();

@@ -56,5 +56,5 @@ These flows are represented as rows on `05 User Flows` and use screen IDs from t
 The Unreal route enum currently exposes 21 routes. The following are intentionally mapped as design surfaces without pretending that their full behaviors exist yet:
 
 - Project / Character Browser, Validation & Export screen, Preset Manager, and Randomization Rules need dedicated runtime surfaces.
-- Color Picker is a Penpot reference and component requirement but has no current modal handler.
+- Color Picker is implemented as a modal route with RGB channel controls, target-specific apply actions, cancel behavior, and focus restoration; visual composition remains simplified relative to Penpot.
 - Animation, technical, preview, and import routes exist as reusable foundation widgets; domain operations remain tracked in the master plan.

@@ -11,6 +11,9 @@
 #include "CharacterCreatorPreviewActor.h"
 #include "UI/CharacterCreatorUIFramework.h"
 
+#define IsCommand IsWorkflowCommand
+#define PreviewMessageForState WorkflowPreviewMessageForState
+
 namespace CharacterCreatorWorkflowUI
 {
     const FCharacterCreatorStylePalette& Palette = FCharacterCreatorUIStyle::GetPalette();
@@ -272,9 +275,10 @@ void UCharacterCreatorWorkflowScreenWidget::BuildMaterialsInspector(UCanvasPanel
     AddCommandButton(Canvas, TEXT("FOREST / BRASS"), FName(TEXT("palette_forest")), FVector2D(1012.0f, 286.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddCommandButton(Canvas, TEXT("MATTE FABRIC FINISH"), FName(TEXT("material_matte")), FVector2D(1012.0f, 338.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
     AddCommandButton(Canvas, TEXT("METALLIC ACCENT FINISH"), FName(TEXT("material_metallic")), FVector2D(1012.0f, 390.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Secondary);
-    AddLabel(WidgetTree, Canvas, TEXT("SelectionLabel"), TEXT("COLOR TARGETS"), FVector2D(1012.0f, 360.0f), FVector2D(220.0f, 16.0f), 9, Palette.Muted);
+    AddCommandButton(Canvas, TEXT("OPEN COLOR PICKER"), FName(TEXT("color_picker")), FVector2D(1012.0f, 442.0f), FVector2D(352.0f, 40.0f), ECharacterCreatorButtonStyle::Primary);
+    AddLabel(WidgetTree, Canvas, TEXT("SelectionLabel"), TEXT("COLOR TARGETS"), FVector2D(1012.0f, 500.0f), FVector2D(220.0f, 16.0f), 9, Palette.Muted);
     SelectionSummaryText = Label(WidgetTree, TEXT("Skin / hair / primary / secondary"), 11, Palette.Text);
-    Place(Canvas, SelectionSummaryText, FVector2D(1012.0f, 382.0f), FVector2D(352.0f, 54.0f));
+    Place(Canvas, SelectionSummaryText, FVector2D(1012.0f, 522.0f), FVector2D(352.0f, 54.0f));
 }
 
 void UCharacterCreatorWorkflowScreenWidget::BuildWeaponsInspector(UCanvasPanel* Canvas)
@@ -433,6 +437,12 @@ void UCharacterCreatorWorkflowScreenWidget::HandleCommand(FName CommandId)
 {
     if (!Session)
     {
+        return;
+    }
+
+    if (IsCommand(CommandId, TEXT("color_picker")))
+    {
+        OnModalRequested.Broadcast(FName(TEXT("color_picker")));
         return;
     }
 
@@ -600,3 +610,6 @@ void UCharacterCreatorWorkflowScreenWidget::HandleCommand(FName CommandId)
         Session->SetStatusMessage(FText::FromString(TEXT("Feet IK enabled for the animation workspace")));
     }
 }
+
+#undef IsCommand
+#undef PreviewMessageForState

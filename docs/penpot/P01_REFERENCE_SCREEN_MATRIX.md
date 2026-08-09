@@ -49,7 +49,7 @@
 | 30 | Additional | `02_Additional_Screens/23_settings.png` | `Screen Board / 30 / Settings` | `Settings` | Canonical settings view; routed foundation |
 | 31 | Additional | `02_Additional_Screens/24_new_character_modal.png` | `Screen Board / 31 / New Character Modal` | `new_character` modal | Canonical modal; current modal shell is concrete but simplified |
 | 32 | Additional | `02_Additional_Screens/25_asset_picker_modal.png` | `Screen Board / 32 / Asset Picker Modal` | `asset_picker` modal | Canonical modal; current modal shell is concrete but simplified |
-| 33 | Additional | `02_Additional_Screens/26_color_picker_modal.png` | `Screen Board / 33 / Color Picker Modal` | No `color_picker` handler | Canonical modal requirement; missing implementation state |
+| 33 | Additional | `02_Additional_Screens/26_color_picker_modal.png` | `Screen Board / 33 / Color Picker Modal` | `color_picker` modal with RGB sliders and target actions | Functional coverage is complete; exact Penpot composition remains simplified |
 | 34 | Additional | `02_Additional_Screens/27_save_as_template_modal.png` | `Screen Board / 34 / Save as Template Modal` | `save_template` modal | Canonical modal; current handler is concrete but simplified |
 | 35 | Additional | `02_Additional_Screens/28_export_options_modal.png` | `Screen Board / 35 / Export Options Modal` | `export_options` modal | Canonical modal; current manifest export is wired |
 | 36 | Additional | `02_Additional_Screens/29_loading_progress.png` | `Screen Board / 36 / Loading / Progress` | Preview `Loading` state and async asset load | Canonical state; current loading message is not a full progress workspace |
@@ -68,4 +68,4 @@
 | Penpot screen boards | 39 | One native board per individual reference |
 | Unreal enum routes | 21 | Full route list is in the handoff and does not imply full domain behavior |
 | Dedicated route gaps | 4 | Project browser, validation/export screen, preset manager, randomization rules |
-| Modal/state gaps | 1+ | Color picker is absent as a handler; additional states are listed in the missing-state report |
+| Modal/state gaps | 1+ | Color picker is functionally covered; additional states are listed in the missing-state report |

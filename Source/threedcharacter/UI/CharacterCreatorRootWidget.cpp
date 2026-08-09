@@ -3,6 +3,7 @@
 #include "Blueprint/WidgetTree.h"
 #include "Components/Button.h"
 #include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/Image.h"
 #include "Components/ScaleBox.h"
 #include "Components/SizeBox.h"
@@ -106,6 +107,10 @@ void UCharacterCreatorRootWidget::InitializeWithPreviewActor(ACharacterCreatorPr
     if (PreviewActor)
     {
         PreviewActor->OnPreviewStateChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplyPreviewState);
+        if (Session)
+        {
+            PreviewActor->ApplyPerformanceSettings(Session->GetSettings());
+        }
         ApplyPreviewRenderTarget();
         ApplyPreviewState(PreviewActor->GetPreviewState(), PreviewMessageForState(PreviewActor->GetPreviewState()));
     }
@@ -144,6 +149,7 @@ void UCharacterCreatorRootWidget::NativeConstruct()
     {
         PreviewActor->OnPreviewStateChanged.RemoveAll(this);
         PreviewActor->OnPreviewStateChanged.AddUObject(this, &UCharacterCreatorRootWidget::ApplyPreviewState);
+        PreviewActor->ApplyPerformanceSettings(Session->GetSettings());
         ApplyPreviewRenderTarget();
         ApplyPreviewState(PreviewActor->GetPreviewState(), PreviewMessageForState(PreviewActor->GetPreviewState()));
     }
@@ -157,6 +163,11 @@ void UCharacterCreatorRootWidget::NativeDestruct()
         Session->OnStatusChanged.RemoveAll(this);
         Session->OnAppearanceChanged.RemoveAll(this);
         Session->OnSettingsChanged.RemoveAll(this);
+    }
+
+    if (MaterialsScreen)
+    {
+        MaterialsScreen->OnModalRequested.RemoveAll(this);
     }
 
     if (PreviewActor)
@@ -180,14 +191,14 @@ void UCharacterCreatorRootWidget::BuildLayout()
 {
     using namespace CharacterCreatorUI;
 
-    UScaleBox* ScaleBox = WidgetTree->ConstructWidget<UScaleBox>();
-    ScaleBox->SetStretch(EStretch::ScaleToFit);
-    WidgetTree->RootWidget = ScaleBox;
+    RootScaleBox = WidgetTree->ConstructWidget<UScaleBox>();
+    RootScaleBox->SetStretch(EStretch::ScaleToFit);
+    WidgetTree->RootWidget = RootScaleBox;
 
     USizeBox* DesignSize = WidgetTree->ConstructWidget<USizeBox>();
     DesignSize->SetWidthOverride(1440.0f);
     DesignSize->SetHeightOverride(810.0f);
-    ScaleBox->AddChild(DesignSize);
+    RootScaleBox->AddChild(DesignSize);
 
     UCanvasPanel* RootCanvas = WidgetTree->ConstructWidget<UCanvasPanel>();
     DesignSize->AddChild(RootCanvas);
@@ -216,6 +227,7 @@ void UCharacterCreatorRootWidget::BuildLayout()
     HairScreen->InitializeWithSession(Session);
     MaterialsScreen->InitializeWithSession(Session);
     WeaponsScreen->InitializeWithSession(Session);
+    MaterialsScreen->OnModalRequested.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowModalRequested);
     OutfitScreen->InitializeWithPreviewActor(PreviewActor);
     HairScreen->InitializeWithPreviewActor(PreviewActor);
     MaterialsScreen->InitializeWithPreviewActor(PreviewActor);
@@ -685,13 +697,21 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
     const FKey Key = InKeyEvent.GetKey();
     if (Session && Session->GetSettings().bGamepadEnabled && Session->GetSettings().bDPadNavigation)
     {
-        if (Key == EKeys::Gamepad_DPad_Left || Key == EKeys::Gamepad_DPad_Up)
+        if (Key == EKeys::Gamepad_DPad_Left)
         {
-            return MoveFocusByDelta(-1) ? FReply::Handled() : FReply::Unhandled();
+            return MoveFocusByDirection(FName(TEXT("left"))) ? FReply::Handled() : FReply::Unhandled();
         }
-        if (Key == EKeys::Gamepad_DPad_Right || Key == EKeys::Gamepad_DPad_Down)
+        if (Key == EKeys::Gamepad_DPad_Right)
         {
-            return MoveFocusByDelta(1) ? FReply::Handled() : FReply::Unhandled();
+            return MoveFocusByDirection(FName(TEXT("right"))) ? FReply::Handled() : FReply::Unhandled();
+        }
+        if (Key == EKeys::Gamepad_DPad_Up)
+        {
+            return MoveFocusByDirection(FName(TEXT("up"))) ? FReply::Handled() : FReply::Unhandled();
+        }
+        if (Key == EKeys::Gamepad_DPad_Down)
+        {
+            return MoveFocusByDirection(FName(TEXT("down"))) ? FReply::Handled() : FReply::Unhandled();
         }
     }
 
@@ -699,6 +719,7 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
     {
         if (ModalManager && ModalManager->CloseTopModal())
         {
+            BuildFocusGraphForActiveScreen();
             return FReply::Handled();
         }
 
@@ -711,6 +732,11 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
 
     if (Session && (Key == EKeys::Gamepad_LeftShoulder || Key == EKeys::Gamepad_RightShoulder))
     {
+        if (ModalManager && ModalManager->HasOpenModal())
+        {
+            return FReply::Handled();
+        }
+
         const TArray<ECharacterCreatorScreen> ScreenOrder = {
             ECharacterCreatorScreen::Dashboard,
             ECharacterCreatorScreen::ProjectBrowser,
@@ -756,7 +782,10 @@ FReply UCharacterCreatorRootWidget::NativeOnKeyDown(const FGeometry& InGeometry,
     {
         if (ModalManager && ModalManager->HasOpenModal())
         {
-            ModalManager->CloseTopModal();
+            if (ModalManager->CloseTopModal())
+            {
+                BuildFocusGraphForActiveScreen();
+            }
             return FReply::Handled();
         }
         Session->RevertAppearanceChanges();
@@ -770,13 +799,33 @@ FReply UCharacterCreatorRootWidget::NativeOnAnalogValueChanged(const FGeometry& 
 {
     if (Session && Session->GetSettings().bGamepadEnabled)
     {
+        if (ModalManager && ModalManager->HasOpenModal())
+        {
+            if (Session->GetSettings().bAnalogNavigation && FMath::Abs(InAnalogEvent.GetAnalogValue()) > 0.75f &&
+                (InAnalogEvent.GetKey() == EKeys::Gamepad_LeftX || InAnalogEvent.GetKey() == EKeys::Gamepad_LeftY))
+            {
+                const bool bHorizontal = InAnalogEvent.GetKey() == EKeys::Gamepad_LeftX;
+                const bool bPositive = InAnalogEvent.GetAnalogValue() > 0.0f;
+                const FName Direction = bHorizontal
+                    ? (bPositive ? FName(TEXT("right")) : FName(TEXT("left")))
+                    : (bPositive ? FName(TEXT("up")) : FName(TEXT("down")));
+                return MoveFocusByDirection(Direction) ? FReply::Handled() : FReply::Unhandled();
+            }
+            return Super::NativeOnAnalogValueChanged(InGeometry, InAnalogEvent);
+        }
+
         HandleGamepadCameraInput(InAnalogEvent);
         if (InAnalogEvent.GetKey() == EKeys::Gamepad_LeftX || InAnalogEvent.GetKey() == EKeys::Gamepad_LeftY)
         {
             const float Value = InAnalogEvent.GetAnalogValue();
             if (Session->GetSettings().bAnalogNavigation && FMath::Abs(Value) > 0.75f)
             {
-                return MoveFocusByDelta(Value > 0.0f ? 1 : -1) ? FReply::Handled() : FReply::Unhandled();
+                const bool bHorizontal = InAnalogEvent.GetKey() == EKeys::Gamepad_LeftX;
+                const bool bPositive = Value > 0.0f;
+                const FName Direction = bHorizontal
+                    ? (bPositive ? FName(TEXT("right")) : FName(TEXT("left")))
+                    : (bPositive ? FName(TEXT("up")) : FName(TEXT("down")));
+                return MoveFocusByDirection(Direction) ? FReply::Handled() : FReply::Unhandled();
             }
         }
     }
@@ -788,19 +837,50 @@ void UCharacterCreatorRootWidget::ApplyStatus(const FText& NewStatus)
     if (DashboardStatusText && !NewStatus.IsEmpty())
     {
         DashboardStatusText->SetText(NewStatus);
+        if (Session && Session->GetSettings().bHighContrast)
+        {
+            DashboardStatusText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+        }
     }
 
     if (CharacterStatusText && !NewStatus.IsEmpty())
     {
         CharacterStatusText->SetText(NewStatus);
+        if (Session && Session->GetSettings().bHighContrast)
+        {
+            CharacterStatusText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+        }
     }
 }
 
 void UCharacterCreatorRootWidget::ApplySettings(const FCharacterCreatorSettings& NewSettings)
 {
-    if (ShellCanvas)
+    if (PreviewActor)
     {
-        ShellCanvas->SetRenderScale(FVector2D(NewSettings.UIScale));
+        PreviewActor->ApplyPerformanceSettings(NewSettings);
+    }
+
+    if (RootScaleBox)
+    {
+        RootScaleBox->SetRenderScale(FVector2D(NewSettings.UIScale));
+    }
+
+    if (WidgetTree)
+    {
+        TArray<UWidget*> AllWidgets;
+        WidgetTree->GetAllWidgets(AllWidgets);
+        const FLinearColor AccessibleTextColor = NewSettings.bHighContrast ? FLinearColor::White : CharacterCreatorUI::Text;
+        for (UWidget* Widget : AllWidgets)
+        {
+            if (UTextBlock* TextBlock = Cast<UTextBlock>(Widget))
+            {
+                TextBlock->SetRenderScale(FVector2D(NewSettings.TextScale));
+                if (NewSettings.bHighContrast)
+                {
+                    TextBlock->SetColorAndOpacity(FSlateColor(AccessibleTextColor));
+                }
+            }
+        }
     }
 }
 
@@ -834,15 +914,66 @@ void UCharacterCreatorRootWidget::BuildFocusGraphForActiveScreen()
 
     if (Session)
     {
+        TArray<FVector2D> Centers;
+        Centers.Reserve(ActiveFocusWidgets.Num());
+        for (UWidget* Widget : ActiveFocusWidgets)
+        {
+            FVector2D Center = Widget->GetCachedGeometry().GetAbsolutePosition() + (Widget->GetCachedGeometry().GetLocalSize() * 0.5f);
+            if (Widget->GetCachedGeometry().GetLocalSize().IsNearlyZero())
+            {
+                if (const UCanvasPanelSlot* CanvasSlot = Cast<UCanvasPanelSlot>(Widget->Slot))
+                {
+                    Center = CanvasSlot->GetPosition() + (CanvasSlot->GetSize() * 0.5f);
+                }
+            }
+            Centers.Add(Center);
+        }
+
+        auto FindNearest = [&Centers](int32 FromIndex, bool bHorizontal, float Sign) -> int32
+        {
+            int32 BestIndex = INDEX_NONE;
+            float BestScore = TNumericLimits<float>::Max();
+            for (int32 CandidateIndex = 0; CandidateIndex < Centers.Num(); ++CandidateIndex)
+            {
+                if (CandidateIndex == FromIndex)
+                {
+                    continue;
+                }
+                const FVector2D Delta = Centers[CandidateIndex] - Centers[FromIndex];
+                const float Primary = (bHorizontal ? Delta.X : Delta.Y) * Sign;
+                if (Primary <= 1.0f)
+                {
+                    continue;
+                }
+                const float Cross = FMath::Abs(bHorizontal ? Delta.Y : Delta.X);
+                const float Score = Primary + (Cross * 0.35f);
+                if (Score < BestScore)
+                {
+                    BestScore = Score;
+                    BestIndex = CandidateIndex;
+                }
+            }
+            return BestIndex;
+        };
+
         TArray<FCharacterCreatorFocusGraphNode> Graph;
         for (int32 Index = 0; Index < ActiveFocusWidgets.Num(); ++Index)
         {
             FCharacterCreatorFocusGraphNode& Node = Graph.AddDefaulted_GetRef();
             Node.Id = ActiveFocusWidgets[Index]->GetFName();
-            Node.Left = Index > 0 ? ActiveFocusWidgets[Index - 1]->GetFName() : (ActiveFocusWidgets.Num() > 1 ? ActiveFocusWidgets.Last()->GetFName() : NAME_None);
-            Node.Right = Index + 1 < ActiveFocusWidgets.Num() ? ActiveFocusWidgets[Index + 1]->GetFName() : (ActiveFocusWidgets.Num() > 1 ? ActiveFocusWidgets[0]->GetFName() : NAME_None);
-            Node.Up = Node.Left;
-            Node.Down = Node.Right;
+            const int32 LeftIndex = FindNearest(Index, true, -1.0f);
+            const int32 RightIndex = FindNearest(Index, true, 1.0f);
+            const int32 UpIndex = FindNearest(Index, false, -1.0f);
+            const int32 DownIndex = FindNearest(Index, false, 1.0f);
+            Node.Left = LeftIndex != INDEX_NONE ? ActiveFocusWidgets[LeftIndex]->GetFName() : (Index > 0 ? ActiveFocusWidgets[Index - 1]->GetFName() : NAME_None);
+            Node.Right = RightIndex != INDEX_NONE ? ActiveFocusWidgets[RightIndex]->GetFName() : (Index + 1 < ActiveFocusWidgets.Num() ? ActiveFocusWidgets[Index + 1]->GetFName() : NAME_None);
+            Node.Up = UpIndex != INDEX_NONE ? ActiveFocusWidgets[UpIndex]->GetFName() : Node.Left;
+            Node.Down = DownIndex != INDEX_NONE ? ActiveFocusWidgets[DownIndex]->GetFName() : Node.Right;
+
+            if (LeftIndex != INDEX_NONE) ActiveFocusWidgets[Index]->SetNavigationRuleExplicit(EUINavigation::Left, ActiveFocusWidgets[LeftIndex]);
+            if (RightIndex != INDEX_NONE) ActiveFocusWidgets[Index]->SetNavigationRuleExplicit(EUINavigation::Right, ActiveFocusWidgets[RightIndex]);
+            if (UpIndex != INDEX_NONE) ActiveFocusWidgets[Index]->SetNavigationRuleExplicit(EUINavigation::Up, ActiveFocusWidgets[UpIndex]);
+            if (DownIndex != INDEX_NONE) ActiveFocusWidgets[Index]->SetNavigationRuleExplicit(EUINavigation::Down, ActiveFocusWidgets[DownIndex]);
         }
         Session->SetFocusGraph(Graph);
     }
@@ -881,9 +1012,72 @@ bool UCharacterCreatorRootWidget::MoveFocusByDelta(int32 Delta)
     return true;
 }
 
+bool UCharacterCreatorRootWidget::MoveFocusByDirection(FName Direction)
+{
+    if (ActiveFocusWidgets.Num() == 0)
+    {
+        BuildFocusGraphForActiveScreen();
+    }
+    if (ActiveFocusWidgets.Num() == 0)
+    {
+        return false;
+    }
+
+    int32 CurrentIndex = LastFocusWidget.IsValid() ? ActiveFocusWidgets.IndexOfByKey(LastFocusWidget.Get()) : INDEX_NONE;
+    if (CurrentIndex == INDEX_NONE)
+    {
+        CurrentIndex = 0;
+    }
+
+    int32 TargetIndex = INDEX_NONE;
+    if (Session)
+    {
+        for (const FCharacterCreatorFocusGraphNode& Node : Session->GetFocusGraph())
+        {
+            if (Node.Id != ActiveFocusWidgets[CurrentIndex]->GetFName())
+            {
+                continue;
+            }
+            const FName TargetId = Direction == FName(TEXT("left")) ? Node.Left
+                : Direction == FName(TEXT("right")) ? Node.Right
+                : Direction == FName(TEXT("up")) ? Node.Up
+                : Node.Down;
+            for (int32 Index = 0; Index < ActiveFocusWidgets.Num(); ++Index)
+            {
+                if (ActiveFocusWidgets[Index]->GetFName() == TargetId)
+                {
+                    TargetIndex = Index;
+                    break;
+                }
+            }
+            break;
+        }
+    }
+
+    if (TargetIndex == INDEX_NONE)
+    {
+        TargetIndex = (CurrentIndex + ((Direction == FName(TEXT("left")) || Direction == FName(TEXT("up"))) ? -1 : 1) + ActiveFocusWidgets.Num()) % ActiveFocusWidgets.Num();
+    }
+
+    for (UWidget* Widget : ActiveFocusWidgets)
+    {
+        if (UCharacterCreatorButtonWidget* Button = Cast<UCharacterCreatorButtonWidget>(Widget))
+        {
+            Button->SetFocusVisual(false);
+        }
+    }
+    LastFocusWidget = ActiveFocusWidgets[TargetIndex];
+    if (UCharacterCreatorButtonWidget* Button = Cast<UCharacterCreatorButtonWidget>(ActiveFocusWidgets[TargetIndex]))
+    {
+        Button->SetFocusVisual(true);
+    }
+    UCharacterCreatorUIHelpers::FocusWidget(ActiveFocusWidgets[TargetIndex]);
+    return true;
+}
+
 void UCharacterCreatorRootWidget::HandleGamepadCameraInput(const FAnalogInputEvent& AnalogEvent)
 {
-    if (!Session || !PreviewActor || !Session->GetSettings().bAnalogNavigation)
+    if (!Session || !PreviewActor || !Session->GetSettings().bAnalogNavigation || Session->GetSettings().bReducedMotion)
     {
         return;
     }
@@ -998,13 +1192,13 @@ void UCharacterCreatorRootWidget::ApplyPreviewState(ECharacterCreatorPreviewStat
     if (DashboardPreviewStatusText)
     {
         DashboardPreviewStatusText->SetText(Message);
-        DashboardPreviewStatusText->SetColorAndOpacity(FSlateColor(StateColor));
+        DashboardPreviewStatusText->SetColorAndOpacity(FSlateColor(Session && Session->GetSettings().bHighContrast ? FLinearColor::White : StateColor));
     }
 
     if (CharacterPreviewStatusText)
     {
         CharacterPreviewStatusText->SetText(Message);
-        CharacterPreviewStatusText->SetColorAndOpacity(FSlateColor(StateColor));
+        CharacterPreviewStatusText->SetColorAndOpacity(FSlateColor(Session && Session->GetSettings().bHighContrast ? FLinearColor::White : StateColor));
     }
 
     ApplyPreviewRenderTarget();
@@ -1030,12 +1224,16 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
 
     Modal->Rename(*DialogId.ToString());
     Modal->SetBrushColor(FLinearColor(0.0f, 0.0f, 0.0f, 0.78f));
+    UWidget* PreviousFocus = LastFocusWidget.Get();
 
     UCanvasPanel* ModalCanvas = WidgetTree->ConstructWidget<UCanvasPanel>();
     Modal->AddChild(ModalCanvas);
 
+    const bool bColorPicker = DialogId == FName(TEXT("color_picker"));
     const int32 ActionCount = FMath::Max(1, Actions.Num());
-    const float DialogHeight = FMath::Clamp(230.0f + (static_cast<float>(ActionCount) * 48.0f), 280.0f, 470.0f);
+    const float DialogHeight = bColorPicker
+        ? FMath::Clamp(380.0f + (static_cast<float>(ActionCount) * 48.0f), 500.0f, 700.0f)
+        : FMath::Clamp(230.0f + (static_cast<float>(ActionCount) * 48.0f), 280.0f, 470.0f);
     const FVector2D DialogSize(560.0f, DialogHeight);
     const FVector2D DialogPosition = UCharacterCreatorUIHelpers::ClampPopupPosition(
         FVector2D((1440.0f - DialogSize.X) * 0.5f, (810.0f - DialogSize.Y) * 0.5f),
@@ -1059,7 +1257,47 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
         DialogActions.Add(TPair<FName, FString>(FName(TEXT("dialog_close")), TEXT("CLOSE")));
     }
 
+    TArray<UWidget*> ModalFocusWidgets;
     UWidget* FirstAction = nullptr;
+
+    if (bColorPicker)
+    {
+        PendingColorPickerTarget = ECharacterCreatorColorTarget::Skin;
+        PendingColorPickerColor = Session ? Session->GetColorTarget(PendingColorPickerTarget) : FLinearColor::White;
+        ColorPickerSliders.Reset();
+
+        const TArray<TTuple<const TCHAR*, ECharacterCreatorParameter, float>> Channels = {
+            {TEXT("RED"), ECharacterCreatorParameter::Height, PendingColorPickerColor.R},
+            {TEXT("GREEN"), ECharacterCreatorParameter::ShoulderWidth, PendingColorPickerColor.G},
+            {TEXT("BLUE"), ECharacterCreatorParameter::ArmLength, PendingColorPickerColor.B}
+        };
+        for (int32 ChannelIndex = 0; ChannelIndex < Channels.Num(); ++ChannelIndex)
+        {
+            const float ChannelY = 164.0f + (static_cast<float>(ChannelIndex) * 48.0f);
+            FCharacterCreatorUIFactory::AddLabel(
+                WidgetTree,
+                DialogContent,
+                FString::Printf(TEXT("ColorPickerChannel_%d"), ChannelIndex),
+                Channels[ChannelIndex].Get<0>(),
+                FVector2D(28.0f, ChannelY),
+                FVector2D(72.0f, 28.0f),
+                10,
+                CharacterCreatorUI::Muted);
+            UCharacterCreatorSliderWidget* ChannelSlider = FCharacterCreatorUIFactory::MakeSlider(
+                WidgetTree,
+                Channels[ChannelIndex].Get<1>(),
+                Channels[ChannelIndex].Get<2>());
+            ChannelSlider->OnParameterValueChanged.AddUObject(this, &UCharacterCreatorRootWidget::HandleColorPickerChannelChanged);
+            FCharacterCreatorUIFactory::Place(DialogContent, ChannelSlider, FVector2D(112.0f, ChannelY + 4.0f), FVector2D(384.0f, 24.0f));
+            ColorPickerSliders.Add(ChannelSlider);
+            ModalFocusWidgets.Add(ChannelSlider);
+        }
+        if (ColorPickerSliders.Num() > 0)
+        {
+            FirstAction = ColorPickerSliders[0];
+        }
+    }
+
     for (int32 ActionIndex = 0; ActionIndex < DialogActions.Num(); ++ActionIndex)
     {
         const TPair<FName, FString>& Action = DialogActions[ActionIndex];
@@ -1072,18 +1310,27 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
             11);
         ActionButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleModalCommand);
 
-        const float ActionY = 174.0f + (static_cast<float>(ActionIndex) * 44.0f);
+        const float ActionY = (bColorPicker ? 320.0f : 174.0f) + (static_cast<float>(ActionIndex) * 44.0f);
         FCharacterCreatorUIFactory::Place(DialogContent, ActionButton, FVector2D(28.0f, ActionY), FVector2D(500.0f, 34.0f));
         if (!FirstAction)
         {
             FirstAction = ActionButton;
         }
+        ModalFocusWidgets.Add(ActionButton);
     }
+
+    FCharacterCreatorUIFactory::ConfigureFocusGraph(ModalFocusWidgets);
+    ActiveFocusWidgets.Reset();
+    for (UWidget* Widget : ModalFocusWidgets)
+    {
+        ActiveFocusWidgets.Add(Widget);
+    }
+    LastFocusWidget = FirstAction;
 
     FCharacterCreatorUIFactory::Place(ModalOverlay, Modal, FVector2D::ZeroVector, FVector2D(1440.0f, 810.0f));
     ModalDialogs.Add(Modal);
 
-    UWidget* ReturnFocus = LastFocusWidget.Get();
+    UWidget* ReturnFocus = PreviousFocus;
     if (!ReturnFocus)
     {
         ReturnFocus = this;
@@ -1092,6 +1339,18 @@ void UCharacterCreatorRootWidget::OpenModalDialog(FName DialogId, const FString&
     if (ModalManager->OpenModal(Modal, ReturnFocus) && FirstAction)
     {
         UCharacterCreatorUIHelpers::FocusWidget(FirstAction);
+        if (UCharacterCreatorButtonWidget* FocusButton = Cast<UCharacterCreatorButtonWidget>(FirstAction))
+        {
+            FocusButton->SetFocusVisual(true);
+        }
+    }
+}
+
+void UCharacterCreatorRootWidget::CloseTopModalAndRestoreFocus()
+{
+    if (ModalManager && ModalManager->CloseTopModal())
+    {
+        BuildFocusGraphForActiveScreen();
     }
 }
 
@@ -1101,10 +1360,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
         || CommandId == FName(TEXT("dialog_cancel"))
         || CommandId == FName(TEXT("dialog_new_cancel")))
     {
-        if (ModalManager)
-        {
-            ModalManager->CloseTopModal();
-        }
+        CloseTopModalAndRestoreFocus();
         return;
     }
 
@@ -1115,10 +1371,28 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
             Session->ResetAppearance();
             Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
         }
-        if (ModalManager)
+        CloseTopModalAndRestoreFocus();
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_color_apply_skin"))
+        || CommandId == FName(TEXT("dialog_color_apply_hair"))
+        || CommandId == FName(TEXT("dialog_color_apply_primary"))
+        || CommandId == FName(TEXT("dialog_color_apply_secondary")))
+    {
+        if (Session)
         {
-            ModalManager->CloseTopModal();
+            const ECharacterCreatorColorTarget Target = CommandId == FName(TEXT("dialog_color_apply_skin"))
+                ? ECharacterCreatorColorTarget::Skin
+                : CommandId == FName(TEXT("dialog_color_apply_hair"))
+                    ? ECharacterCreatorColorTarget::Hair
+                    : CommandId == FName(TEXT("dialog_color_apply_primary"))
+                        ? ECharacterCreatorColorTarget::PrimaryOutfit
+                        : ECharacterCreatorColorTarget::SecondaryOutfit;
+            Session->SetColorTarget(Target, PendingColorPickerColor);
+            Session->SetStatusMessage(FText::FromString(TEXT("Custom RGB color applied; press APPLY to commit it.")));
         }
+        CloseTopModalAndRestoreFocus();
         return;
     }
 
@@ -1129,10 +1403,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
             Session->CreatePresetFromCurrent(FText::FromString(TEXT("Saved Template")), FText::FromString(TEXT("Created from the active character workspace.")));
             Session->SetStatusMessage(FText::FromString(TEXT("Saved the active character as a template")));
         }
-        if (ModalManager)
-        {
-            ModalManager->CloseTopModal();
-        }
+        CloseTopModalAndRestoreFocus();
         return;
     }
 
@@ -1146,19 +1417,13 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
                 Subsystem->ValidateImportDirectory(FPaths::Combine(FPaths::ProjectContentDir(), TEXT("FreeAnimationsPack")), Progress);
             }
         }
-        if (ModalManager)
-        {
-            ModalManager->CloseTopModal();
-        }
+        CloseTopModalAndRestoreFocus();
         return;
     }
 
     if (CommandId == FName(TEXT("dialog_import_open")))
     {
-        if (ModalManager)
-        {
-            ModalManager->CloseTopModal();
-        }
+        CloseTopModalAndRestoreFocus();
         if (Session)
         {
             Session->SetScreen(ECharacterCreatorScreen::ImportWizard);
@@ -1168,14 +1433,14 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
 
     if (CommandId == FName(TEXT("dialog_import_dependencies")))
     {
-        if (ModalManager) ModalManager->CloseTopModal();
+        CloseTopModalAndRestoreFocus();
         OpenModalDialog(FName(TEXT("dependency_warning")), TEXT("DEPENDENCY REVIEW"), TEXT("Some imported assets may reference external materials, skeletons, or animation dependencies. Validate the content folder and copy dependencies before applying the import."), { TPair<FName, FString>(FName(TEXT("dialog_import_open")), TEXT("OPEN IMPORT WIZARD")), TPair<FName, FString>(FName(TEXT("dialog_close")), TEXT("CANCEL")) });
         return;
     }
 
     if (CommandId == FName(TEXT("dialog_import_conflicts")))
     {
-        if (ModalManager) ModalManager->CloseTopModal();
+        CloseTopModalAndRestoreFocus();
         OpenModalDialog(FName(TEXT("conflict_resolution")), TEXT("CONFLICT POLICY"), TEXT("Choose what to do when an imported file already exists in the destination Content folder."), { TPair<FName, FString>(FName(TEXT("dialog_conflict_keep_both")), TEXT("KEEP BOTH")), TPair<FName, FString>(FName(TEXT("dialog_conflict_replace")), TEXT("OVERWRITE")), TPair<FName, FString>(FName(TEXT("dialog_close")), TEXT("CANCEL")) });
         return;
     }
@@ -1183,7 +1448,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
     if (CommandId == FName(TEXT("dialog_conflict_keep_both")) || CommandId == FName(TEXT("dialog_conflict_replace")))
     {
         if (Session) Session->SetStatusMessage(CommandId == FName(TEXT("dialog_conflict_keep_both")) ? FText::FromString(TEXT("Import conflict policy: keep both")) : FText::FromString(TEXT("Import conflict policy: overwrite existing")));
-        if (ModalManager) ModalManager->CloseTopModal();
+        CloseTopModalAndRestoreFocus();
         return;
     }
 
@@ -1201,15 +1466,19 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
                     Profile.bIncludeMaterials = false;
                     Profile.bIncludeAnimations = false;
                     Profile.bIncludeMetadata = true;
+                    bExported = Subsystem->ExportCurrentManifest(Profile, FString());
                 }
-                bExported = Subsystem->ExportCurrentManifest(Profile, FString());
+                else
+                {
+                    Profile.bGenerateBlueprint = true;
+                    Profile.bGenerateDataAsset = true;
+                    Profile.bGeneratePackage = true;
+                    bExported = Subsystem->ExportCurrentDeliverables(Profile, FString());
+                }
             }
         }
-        if (ModalManager)
-        {
-            ModalManager->CloseTopModal();
-        }
-        OpenModalDialog(bExported ? FName(TEXT("export_success")) : FName(TEXT("export_error")), bExported ? TEXT("EXPORT COMPLETE") : TEXT("EXPORT BLOCKED"), bExported ? TEXT("The validated character manifest is ready in Saved/CharacterCreator/Exports. Use Validation + Export to generate Blueprint, Data Asset, and package descriptors.") : TEXT("Export validation found a blocking issue. Open Validation + Export to review the issue list and apply safe fixes."), { TPair<FName, FString>(FName(TEXT("dialog_close")), bExported ? TEXT("DONE") : TEXT("REVIEW LATER")) });
+        CloseTopModalAndRestoreFocus();
+        OpenModalDialog(bExported ? FName(TEXT("export_success")) : FName(TEXT("export_error")), bExported ? TEXT("EXPORT COMPLETE") : TEXT("EXPORT BLOCKED"), bExported ? TEXT("Real Blueprint, Data Asset, and staged Unreal package files were generated under the project Content and Saved export folders.") : TEXT("Export validation found a blocking issue. Open Validation + Export to review the issue list and apply safe fixes."), { TPair<FName, FString>(FName(TEXT("dialog_close")), bExported ? TEXT("DONE") : TEXT("REVIEW LATER")) });
         return;
     }
 
@@ -1220,10 +1489,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
             Session->RandomizeAppearance(false);
             Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
         }
-        if (ModalManager)
-        {
-            ModalManager->CloseTopModal();
-        }
+        CloseTopModalAndRestoreFocus();
         return;
     }
 
@@ -1234,10 +1500,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
             Session->RestoreDefaultPreset();
             Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
         }
-        if (ModalManager)
-        {
-            ModalManager->CloseTopModal();
-        }
+        CloseTopModalAndRestoreFocus();
         return;
     }
 
@@ -1249,10 +1512,7 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
             Session->AdvanceOnboarding();
             Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
         }
-        if (ModalManager)
-        {
-            ModalManager->CloseTopModal();
-        }
+        CloseTopModalAndRestoreFocus();
         return;
     }
 }
@@ -1391,6 +1651,43 @@ void UCharacterCreatorRootWidget::HandleWorkflowCommand(FName CommandId)
                 TPair<FName, FString>(FName(TEXT("dialog_cancel")), TEXT("CANCEL"))
             });
     }
+}
+
+void UCharacterCreatorRootWidget::HandleWorkflowModalRequested(FName DialogId)
+{
+    if (DialogId == FName(TEXT("color_picker")))
+    {
+        OpenModalDialog(
+            FName(TEXT("color_picker")),
+            TEXT("COLOR PICKER"),
+            TEXT("Tune an RGB color, then choose which material target receives it. The change remains an unapplied session edit until Apply is pressed."),
+            {
+                TPair<FName, FString>(FName(TEXT("dialog_color_apply_skin")), TEXT("APPLY TO SKIN")),
+                TPair<FName, FString>(FName(TEXT("dialog_color_apply_hair")), TEXT("APPLY TO HAIR")),
+                TPair<FName, FString>(FName(TEXT("dialog_color_apply_primary")), TEXT("APPLY TO PRIMARY OUTFIT")),
+                TPair<FName, FString>(FName(TEXT("dialog_color_apply_secondary")), TEXT("APPLY TO SECONDARY OUTFIT")),
+                TPair<FName, FString>(FName(TEXT("dialog_cancel")), TEXT("CANCEL"))
+            });
+    }
+}
+
+void UCharacterCreatorRootWidget::HandleColorPickerChannelChanged(ECharacterCreatorParameter Parameter, float Value)
+{
+    switch (Parameter)
+    {
+    case ECharacterCreatorParameter::Height:
+        PendingColorPickerColor.R = Value;
+        break;
+    case ECharacterCreatorParameter::ShoulderWidth:
+        PendingColorPickerColor.G = Value;
+        break;
+    case ECharacterCreatorParameter::ArmLength:
+        PendingColorPickerColor.B = Value;
+        break;
+    default:
+        break;
+    }
+    PendingColorPickerColor.A = 1.0f;
 }
 
 void UCharacterCreatorRootWidget::HandleOpenProjectClicked()

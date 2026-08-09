@@ -13,6 +13,9 @@
 #include "UI/CharacterCreatorSubsystem.h"
 #include "UI/CharacterCreatorExportService.h"
 
+#define IsCommand IsUtilityCommand
+#define PreviewMessageForState UtilityPreviewMessageForState
+
 namespace CharacterCreatorUtilityUI
 {
     const FCharacterCreatorStylePalette& Palette = FCharacterCreatorUIStyle::GetPalette();
@@ -658,3 +661,6 @@ void UCharacterCreatorUtilityWorkspaceWidget::HandleCommand(FName CommandId)
     }
     Session->SetStatusMessage(FText::FromString(Message));
 }
+
+#undef IsCommand
+#undef PreviewMessageForState
