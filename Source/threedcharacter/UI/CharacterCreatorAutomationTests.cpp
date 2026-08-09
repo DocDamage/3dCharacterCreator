@@ -123,6 +123,36 @@ bool FCharacterCreatorSessionFoundationTest::RunTest(const FString& Parameters)
     Session->SetControllerHint(FName(TEXT("TestAction")), FText::FromString(TEXT("Test hint")));
     TestTrue(TEXT("Controller hints are persisted"), Session->GetControllerHintState().Hints.Contains(FName(TEXT("TestAction"))));
 
+    UCharacterCreatorSession* RandomSessionA = NewObject<UCharacterCreatorSession>();
+    UCharacterCreatorSession* RandomSessionB = NewObject<UCharacterCreatorSession>();
+    RandomSessionA->InitializeDefaults();
+    RandomSessionB->InitializeDefaults();
+    RandomSessionA->SetRandomizationSeed(42);
+    RandomSessionB->SetRandomizationSeed(42);
+    RandomSessionA->SetRandomizationCategoryLocked(ECharacterCreatorRandomizationCategory::Body, true);
+    RandomSessionB->SetRandomizationCategoryLocked(ECharacterCreatorRandomizationCategory::Body, true);
+    RandomSessionA->SetRandomizationParameterRange(ECharacterCreatorParameter::EyeSize, 0.2f, 0.3f);
+    RandomSessionB->SetRandomizationParameterRange(ECharacterCreatorParameter::EyeSize, 0.2f, 0.3f);
+    RandomSessionA->RandomizeAppearance();
+    RandomSessionB->RandomizeAppearance();
+    TestEqual(TEXT("Locked body category remains unchanged"), RandomSessionA->GetParameterValue(ECharacterCreatorParameter::Height), 0.56f);
+    TestEqual(TEXT("Seeded randomization is deterministic"), RandomSessionA->GetParameterValue(ECharacterCreatorParameter::EyeSize), RandomSessionB->GetParameterValue(ECharacterCreatorParameter::EyeSize));
+    TestTrue(TEXT("Constrained randomization range is respected"), RandomSessionA->GetParameterValue(ECharacterCreatorParameter::EyeSize) >= 0.2f && RandomSessionA->GetParameterValue(ECharacterCreatorParameter::EyeSize) <= 0.3f);
+
+    const FCharacterPreset PresetA = Session->CreatePresetFromCurrent(FText::FromString(TEXT("Preset A")), FText::FromString(TEXT("Base")));
+    Session->SetParameterValue(ECharacterCreatorParameter::Height, 0.15f);
+    const FCharacterPreset PresetB = Session->CreatePresetFromCurrent(FText::FromString(TEXT("Preset B")), FText::FromString(TEXT("Variant")));
+    const FCharacterCreatorPresetComparison Comparison = Session->ComparePresets(PresetA.PresetId, PresetB.PresetId);
+    TestFalse(TEXT("Preset comparison finds parameter differences"), Comparison.bEquivalent);
+    TestTrue(TEXT("Preset comparison reports parameter category"), Comparison.Differences.Contains(FName(TEXT("Parameters"))));
+    FCharacterCreatorPresetMergeOptions MergeOptions;
+    MergeOptions.bUseSourceBody = true;
+    const FCharacterPreset MergedPreset = Session->CreateMergedPreset(PresetA.PresetId, PresetB.PresetId, MergeOptions);
+    TestTrue(TEXT("Preset merge creates a new preset"), MergedPreset.PresetId.IsValid() && MergedPreset.PresetId != PresetA.PresetId && MergedPreset.PresetId != PresetB.PresetId);
+    Session->SetPresetSearchQuery(TEXT("Preset"));
+    Session->SetPresetSelection({ PresetA.PresetId, PresetB.PresetId }, true);
+    TestTrue(TEXT("Preset manager stores comparison selection"), Session->GetPresetManagerState().bCompareMode && Session->GetPresetManagerState().SelectedPresetIds.Num() == 2);
+
     const FCharacterPreset Duplicate = Session->CreatePresetFromCurrent(FText::FromString(TEXT("Test Preset")), FText::FromString(TEXT("Automation preset")));
     TestTrue(TEXT("Preset has a valid id"), Duplicate.PresetId.IsValid());
     TestTrue(TEXT("Preset duplicate succeeds"), Session->DuplicatePreset(Duplicate.PresetId));

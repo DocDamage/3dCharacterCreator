@@ -640,6 +640,100 @@ struct THREEDCHARACTER_API FCharacterCreatorPreviewTestingState
     FCharacterCreatorControllerHintState Controller;
 };
 
+UENUM(BlueprintType)
+enum class ECharacterCreatorRandomizationCategory : uint8
+{
+    Body,
+    Face,
+    AdvancedFace,
+    Grooming,
+    Materials,
+    Clothing,
+    Equipment,
+    Animation
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorRandomizationRules
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Randomization")
+    int32 Seed = 1337;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Randomization")
+    TMap<ECharacterCreatorParameter, FVector2D> ParameterRanges;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Randomization")
+    TMap<ECharacterCreatorFaceAdvancedParameter, FVector2D> AdvancedFaceRanges;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Randomization")
+    TMap<ECharacterCreatorGroomingParameter, FVector2D> GroomingRanges;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Randomization")
+    TMap<ECharacterCreatorRandomizationCategory, bool> CategoryLocks;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Randomization")
+    bool bRandomizeColors = true;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorPresetComparison
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    FGuid LeftPresetId;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    FGuid RightPresetId;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    TArray<FName> Differences;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    bool bEquivalent = true;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorPresetMergeOptions
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    bool bUseSourceBody = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    bool bUseSourceFace = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    bool bUseSourceMaterials = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    bool bUseSourceClothing = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    bool bUseSourceEquipment = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    bool bUseSourceAnimation = true;
+};
+
+USTRUCT(BlueprintType)
+struct THREEDCHARACTER_API FCharacterCreatorPresetManagerState
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    FString SearchQuery;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    TArray<FGuid> SelectedPresetIds;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    bool bCompareMode = false;
+};
+
 USTRUCT(BlueprintType)
 struct THREEDCHARACTER_API FCharacterCreatorFaceAdvancedState
 {
@@ -781,6 +875,12 @@ struct THREEDCHARACTER_API FCharacterAppearanceState
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
     FCharacterCreatorAssetBrowserState AssetBrowser;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Randomization")
+    FCharacterCreatorRandomizationRules Randomization;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Preset")
+    FCharacterCreatorPresetManagerState PresetManager;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Body")
     float Height = 0.56f;
@@ -965,6 +1065,42 @@ public:
 
     UFUNCTION(BlueprintPure, Category = "Character Creator|Preset")
     TArray<FCharacterPreset> GetPresets() const { return Presets; }
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Randomization")
+    void SetRandomizationSeed(int32 NewSeed);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Randomization")
+    int32 GetRandomizationSeed() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Randomization")
+    void SetRandomizationCategoryLocked(ECharacterCreatorRandomizationCategory Category, bool bLocked);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Randomization")
+    bool IsRandomizationCategoryLocked(ECharacterCreatorRandomizationCategory Category) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Randomization")
+    void SetRandomizationParameterRange(ECharacterCreatorParameter Parameter, float MinValue, float MaxValue);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Randomization")
+    bool RandomizeAppearance(bool bApplyImmediately = false);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Randomization")
+    FCharacterCreatorRandomizationRules GetRandomizationRules() const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Preset")
+    FCharacterCreatorPresetComparison ComparePresets(const FGuid& LeftPresetId, const FGuid& RightPresetId) const;
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Preset")
+    FCharacterPreset CreateMergedPreset(const FGuid& BasePresetId, const FGuid& SourcePresetId, const FCharacterCreatorPresetMergeOptions& Options);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Preset")
+    void SetPresetSearchQuery(const FString& SearchQuery);
+
+    UFUNCTION(BlueprintCallable, Category = "Character Creator|Preset")
+    void SetPresetSelection(const TArray<FGuid>& SelectedPresetIds, bool bCompareMode);
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Preset")
+    FCharacterCreatorPresetManagerState GetPresetManagerState() const;
 
     void SetPresetLibrary(const TArray<FCharacterPreset>& NewPresets, const FCharacterPreset& NewActivePreset);
 

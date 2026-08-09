@@ -338,6 +338,14 @@ void UCharacterCreatorRootWidget::BuildDashboard(UCanvasPanel* Screen)
     SaveTemplateButton->OnClicked.AddDynamic(this, &UCharacterCreatorRootWidget::HandleSaveTemplateClicked);
     Place(Screen, SaveTemplateButton, FVector2D(924.0f, 412.0f), FVector2D(274.0f, 44.0f));
 
+    UCharacterCreatorCommandButtonWidget* RandomizeCharacterButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, TEXT("RANDOMIZE CHARACTER"), FName(TEXT("randomize")), ECharacterCreatorButtonStyle::Secondary, 11);
+    RandomizeCharacterButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
+    Place(Screen, RandomizeCharacterButton, FVector2D(924.0f, 468.0f), FVector2D(132.0f, 32.0f));
+
+    UCharacterCreatorCommandButtonWidget* PresetManagerButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, TEXT("PRESET MANAGER"), FName(TEXT("preset_manager")), ECharacterCreatorButtonStyle::Secondary, 11);
+    PresetManagerButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
+    Place(Screen, PresetManagerButton, FVector2D(1066.0f, 468.0f), FVector2D(132.0f, 32.0f));
+
     AddLabel(WidgetTree, Screen, TEXT("QuickActionHint"), TEXT("Start from a template or bring in an existing asset."), FVector2D(924.0f, 464.0f), FVector2D(258.0f, 24.0f), 9, Muted);
     AddPanel(WidgetTree, Screen, TEXT("DashboardStatusPanel"), FVector2D(924.0f, 496.0f), FVector2D(274.0f, 74.0f), SurfaceMuted);
     AddLabel(WidgetTree, Screen, TEXT("DashboardStatusLabel"), TEXT("SYSTEM STATUS"), FVector2D(942.0f, 510.0f), FVector2D(180.0f, 14.0f), 9, Muted);
@@ -964,6 +972,34 @@ void UCharacterCreatorRootWidget::HandleModalCommand(FName CommandId)
         return;
     }
 
+    if (CommandId == FName(TEXT("dialog_preset_randomize")))
+    {
+        if (Session)
+        {
+            Session->RandomizeAppearance(false);
+            Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
+        }
+        if (ModalManager)
+        {
+            ModalManager->CloseTopModal();
+        }
+        return;
+    }
+
+    if (CommandId == FName(TEXT("dialog_preset_default")))
+    {
+        if (Session)
+        {
+            Session->RestoreDefaultPreset();
+            Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
+        }
+        if (ModalManager)
+        {
+            ModalManager->CloseTopModal();
+        }
+        return;
+    }
+
     if (CommandId == FName(TEXT("dialog_onboarding_start")))
     {
         if (Session)
@@ -1055,6 +1091,23 @@ void UCharacterCreatorRootWidget::HandleWorkflowCommand(FName CommandId)
     else if (CommandId == FName(TEXT("animation_overview")))
     {
         Session->SetScreen(ECharacterCreatorScreen::AnimationOverview);
+    }
+    else if (CommandId == FName(TEXT("randomize")))
+    {
+        Session->RandomizeAppearance(false);
+        Session->SetScreen(ECharacterCreatorScreen::CharacterCreator);
+    }
+    else if (CommandId == FName(TEXT("preset_manager")))
+    {
+        OpenModalDialog(
+            FName(TEXT("preset_manager")),
+            TEXT("PRESET MANAGER"),
+            FString::Printf(TEXT("%d presets available. Compare, merge, duplicate, rename, or randomize from the active session."), Session->GetPresets().Num()),
+            {
+                TPair<FName, FString>(FName(TEXT("dialog_preset_randomize")), TEXT("RANDOMIZE ACTIVE")),
+                TPair<FName, FString>(FName(TEXT("dialog_preset_default")), TEXT("RESTORE DEFAULT")),
+                TPair<FName, FString>(FName(TEXT("dialog_cancel")), TEXT("CLOSE"))
+            });
     }
     else if (CommandId == FName(TEXT("export")))
     {

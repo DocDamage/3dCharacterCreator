@@ -23,7 +23,7 @@ Unreal Engine 5.7 character-creator prototype with a dark editor-style UI system
 
 ## Phase status
 
-Phase 0 (UI and data foundation) is implemented. Phase 1 preview foundation, Phase 2 core workflow routing, Phase 3 persistence/import/export foundations, and the routed Phase 4–6 workspace foundations are in progress. The runtime module remains intentionally unified until later phases establish enough preview, editor tooling, and persistence boundaries to justify a split.
+Phases 0–5 established the UI, preview, persistence, import/export, and routed workspace foundations. Phases 6–12 are complete: character creation, materials/equipment, animation, technical tools, preview/testing, import/asset management, and seeded preset randomization are implemented in the unified runtime module.
 
 The current session owns mutations; widgets only display state and forward user intent through session methods. The imported Free Animations Pack targets the UE Manny/Quinn skeletons, while the Sidekick preview uses `SKEL_Default_Sidekick`; those animations will be connected after retargeting so the preview never receives an incompatible animation silently. The preview actor will load a compatible animation blueprint or preview animation asynchronously when provided.
 

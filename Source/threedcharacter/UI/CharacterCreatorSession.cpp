@@ -2,7 +2,44 @@
 
 #include "Animation/Skeleton.h"
 #include "Misc/Paths.h"
+#include "Math/RandomStream.h"
 #include "PhysicsEngine/PhysicsAsset.h"
+
+namespace
+{
+    ECharacterCreatorRandomizationCategory CategoryForParameter(ECharacterCreatorParameter Parameter)
+    {
+        switch (Parameter)
+        {
+        case ECharacterCreatorParameter::Height:
+        case ECharacterCreatorParameter::ShoulderWidth:
+        case ECharacterCreatorParameter::ArmLength:
+        case ECharacterCreatorParameter::LegLength:
+        case ECharacterCreatorParameter::HeadScale:
+            return ECharacterCreatorRandomizationCategory::Body;
+        default:
+            return ECharacterCreatorRandomizationCategory::Face;
+        }
+    }
+
+    FVector2D SanitizeRange(const FVector2D& Range)
+    {
+        const float MinValue = FMath::Clamp(FMath::Min(Range.X, Range.Y), 0.0f, 1.0f);
+        const float MaxValue = FMath::Clamp(FMath::Max(Range.X, Range.Y), MinValue, 1.0f);
+        return FVector2D(MinValue, MaxValue);
+    }
+
+    bool IsLocked(const FCharacterCreatorRandomizationRules& Rules, ECharacterCreatorRandomizationCategory Category)
+    {
+        return Rules.CategoryLocks.FindRef(Category);
+    }
+
+    void AddDifference(FCharacterCreatorPresetComparison& Comparison, FName Difference)
+    {
+        Comparison.Differences.Add(Difference);
+        Comparison.bEquivalent = false;
+    }
+}
 
 FCharacterAssetReferences::FCharacterAssetReferences()
     : SkeletalMesh(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Skeletons/SKM_Default_Sidekick.SKM_Default_Sidekick")))
@@ -445,6 +482,30 @@ void UCharacterCreatorSession::InitializeDefaults()
     AppearanceState.PreviewTesting.Controller.Hints.Add(FName(TEXT("Cancel")), FText::FromString(TEXT("B  Cancel / Revert")));
     AppearanceState.PreviewTesting.Controller.Hints.Add(FName(TEXT("Navigate")), FText::FromString(TEXT("D-Pad  Navigate")));
     AppearanceState.PreviewTesting.Controller.Hints.Add(FName(TEXT("SwitchWorkspace")), FText::FromString(TEXT("LB / RB  Switch workspace")));
+    const ECharacterCreatorParameter BasicParameters[] = {
+        ECharacterCreatorParameter::Height,
+        ECharacterCreatorParameter::ShoulderWidth,
+        ECharacterCreatorParameter::ArmLength,
+        ECharacterCreatorParameter::LegLength,
+        ECharacterCreatorParameter::HeadScale,
+        ECharacterCreatorParameter::BrowHeight,
+        ECharacterCreatorParameter::JawWidth,
+        ECharacterCreatorParameter::NoseWidth,
+        ECharacterCreatorParameter::EyeSize,
+        ECharacterCreatorParameter::MouthWidth
+    };
+    for (const ECharacterCreatorParameter Parameter : BasicParameters)
+    {
+        AppearanceState.Randomization.ParameterRanges.Add(Parameter, FVector2D(0.0f, 1.0f));
+    }
+    AppearanceState.Randomization.CategoryLocks.Add(ECharacterCreatorRandomizationCategory::Body, false);
+    AppearanceState.Randomization.CategoryLocks.Add(ECharacterCreatorRandomizationCategory::Face, false);
+    AppearanceState.Randomization.CategoryLocks.Add(ECharacterCreatorRandomizationCategory::AdvancedFace, false);
+    AppearanceState.Randomization.CategoryLocks.Add(ECharacterCreatorRandomizationCategory::Grooming, false);
+    AppearanceState.Randomization.CategoryLocks.Add(ECharacterCreatorRandomizationCategory::Materials, false);
+    AppearanceState.Randomization.CategoryLocks.Add(ECharacterCreatorRandomizationCategory::Clothing, false);
+    AppearanceState.Randomization.CategoryLocks.Add(ECharacterCreatorRandomizationCategory::Equipment, false);
+    AppearanceState.Randomization.CategoryLocks.Add(ECharacterCreatorRandomizationCategory::Animation, false);
     AppearanceState.bHasUnsavedChanges = false;
     SavedAppearanceState = AppearanceState;
 
@@ -572,6 +633,272 @@ void UCharacterCreatorSession::SetPresetLibrary(const TArray<FCharacterPreset>& 
     }
 
     OnPresetChanged.Broadcast(ActivePreset);
+}
+
+void UCharacterCreatorSession::SetRandomizationSeed(int32 NewSeed)
+{
+    AppearanceState.Randomization.Seed = NewSeed;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+int32 UCharacterCreatorSession::GetRandomizationSeed() const
+{
+    return AppearanceState.Randomization.Seed;
+}
+
+void UCharacterCreatorSession::SetRandomizationCategoryLocked(ECharacterCreatorRandomizationCategory Category, bool bLocked)
+{
+    AppearanceState.Randomization.CategoryLocks.Add(Category, bLocked);
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+bool UCharacterCreatorSession::IsRandomizationCategoryLocked(ECharacterCreatorRandomizationCategory Category) const
+{
+    return IsLocked(AppearanceState.Randomization, Category);
+}
+
+void UCharacterCreatorSession::SetRandomizationParameterRange(ECharacterCreatorParameter Parameter, float MinValue, float MaxValue)
+{
+    AppearanceState.Randomization.ParameterRanges.Add(Parameter, SanitizeRange(FVector2D(MinValue, MaxValue)));
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+bool UCharacterCreatorSession::RandomizeAppearance(bool bApplyImmediately)
+{
+    FRandomStream RandomStream(AppearanceState.Randomization.Seed);
+    FCharacterAppearanceState Generated = AppearanceState;
+
+    const TArray<ECharacterCreatorParameter> Parameters = {
+        ECharacterCreatorParameter::Height,
+        ECharacterCreatorParameter::ShoulderWidth,
+        ECharacterCreatorParameter::ArmLength,
+        ECharacterCreatorParameter::LegLength,
+        ECharacterCreatorParameter::HeadScale,
+        ECharacterCreatorParameter::BrowHeight,
+        ECharacterCreatorParameter::JawWidth,
+        ECharacterCreatorParameter::NoseWidth,
+        ECharacterCreatorParameter::EyeSize,
+        ECharacterCreatorParameter::MouthWidth
+    };
+    for (const ECharacterCreatorParameter Parameter : Parameters)
+    {
+        const ECharacterCreatorRandomizationCategory Category = CategoryForParameter(Parameter);
+        if (IsLocked(AppearanceState.Randomization, Category))
+        {
+            continue;
+        }
+
+        const FVector2D Range = AppearanceState.Randomization.ParameterRanges.Contains(Parameter)
+            ? SanitizeRange(AppearanceState.Randomization.ParameterRanges.FindRef(Parameter))
+            : FVector2D(0.0f, 1.0f);
+        Generated.SetParameterValue(Parameter, RandomStream.FRandRange(Range.X, Range.Y));
+    }
+
+    if (!IsLocked(AppearanceState.Randomization, ECharacterCreatorRandomizationCategory::AdvancedFace))
+    {
+        const TArray<ECharacterCreatorFaceAdvancedParameter> FaceParameters = {
+            ECharacterCreatorFaceAdvancedParameter::CheekWidth,
+            ECharacterCreatorFaceAdvancedParameter::ChinDepth,
+            ECharacterCreatorFaceAdvancedParameter::EyeSpacing,
+            ECharacterCreatorFaceAdvancedParameter::EyeHeight,
+            ECharacterCreatorFaceAdvancedParameter::LipFullness,
+            ECharacterCreatorFaceAdvancedParameter::EarSize,
+            ECharacterCreatorFaceAdvancedParameter::NasolabialDepth
+        };
+        for (const ECharacterCreatorFaceAdvancedParameter Parameter : FaceParameters)
+        {
+            const FVector2D Range = AppearanceState.Randomization.AdvancedFaceRanges.Contains(Parameter)
+                ? SanitizeRange(AppearanceState.Randomization.AdvancedFaceRanges.FindRef(Parameter))
+                : FVector2D(0.0f, 1.0f);
+            Generated.AdvancedFace.SetValue(Parameter, RandomStream.FRandRange(Range.X, Range.Y));
+        }
+    }
+
+    if (!IsLocked(AppearanceState.Randomization, ECharacterCreatorRandomizationCategory::Grooming))
+    {
+        const TArray<ECharacterCreatorGroomingParameter> GroomingParameters = {
+            ECharacterCreatorGroomingParameter::SkinRoughness,
+            ECharacterCreatorGroomingParameter::SkinDetail,
+            ECharacterCreatorGroomingParameter::HairLength,
+            ECharacterCreatorGroomingParameter::HairDensity,
+            ECharacterCreatorGroomingParameter::HairRoughness
+        };
+        for (const ECharacterCreatorGroomingParameter Parameter : GroomingParameters)
+        {
+            const FVector2D Range = AppearanceState.Randomization.GroomingRanges.Contains(Parameter)
+                ? SanitizeRange(AppearanceState.Randomization.GroomingRanges.FindRef(Parameter))
+                : FVector2D(0.0f, 1.0f);
+            Generated.Grooming.SetValue(Parameter, RandomStream.FRandRange(Range.X, Range.Y));
+        }
+    }
+
+    if (AppearanceState.Randomization.bRandomizeColors && !IsLocked(AppearanceState.Randomization, ECharacterCreatorRandomizationCategory::Materials))
+    {
+        const auto RandomColor = [&RandomStream]()
+        {
+            return FLinearColor(
+                RandomStream.FRandRange(0.08f, 0.90f),
+                RandomStream.FRandRange(0.08f, 0.90f),
+                RandomStream.FRandRange(0.08f, 0.90f),
+                1.0f);
+        };
+        Generated.SkinColor = RandomColor();
+        Generated.HairColor = RandomColor();
+        Generated.PrimaryOutfitColor = RandomColor();
+        Generated.SecondaryOutfitColor = RandomColor();
+    }
+
+    if (!IsLocked(AppearanceState.Randomization, ECharacterCreatorRandomizationCategory::Clothing))
+    {
+        Generated.Loadout.bOutfitEnabled = RandomStream.FRand() >= 0.5f;
+        Generated.Loadout.bHairEnabled = RandomStream.FRand() >= 0.5f;
+    }
+
+    Generated.bHasUnsavedChanges = true;
+    AppearanceState = Generated;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(FText::FromString(FString::Printf(TEXT("Randomized appearance with seed %d"), AppearanceState.Randomization.Seed)));
+    if (bApplyImmediately)
+    {
+        ApplyAppearanceChanges();
+    }
+    return true;
+}
+
+FCharacterCreatorRandomizationRules UCharacterCreatorSession::GetRandomizationRules() const
+{
+    return AppearanceState.Randomization;
+}
+
+FCharacterCreatorPresetComparison UCharacterCreatorSession::ComparePresets(const FGuid& LeftPresetId, const FGuid& RightPresetId) const
+{
+    FCharacterCreatorPresetComparison Comparison;
+    Comparison.LeftPresetId = LeftPresetId;
+    Comparison.RightPresetId = RightPresetId;
+    const FCharacterPreset* LeftPreset = Presets.FindByPredicate([&LeftPresetId](const FCharacterPreset& Preset) { return Preset.PresetId == LeftPresetId; });
+    const FCharacterPreset* RightPreset = Presets.FindByPredicate([&RightPresetId](const FCharacterPreset& Preset) { return Preset.PresetId == RightPresetId; });
+    if (!LeftPreset || !RightPreset)
+    {
+        AddDifference(Comparison, FName(TEXT("MissingPreset")));
+        return Comparison;
+    }
+
+    const FCharacterAppearanceState& Left = LeftPreset->Appearance;
+    const FCharacterAppearanceState& Right = RightPreset->Appearance;
+    const ECharacterCreatorParameter Parameters[] = {
+        ECharacterCreatorParameter::Height,
+        ECharacterCreatorParameter::ShoulderWidth,
+        ECharacterCreatorParameter::ArmLength,
+        ECharacterCreatorParameter::LegLength,
+        ECharacterCreatorParameter::HeadScale,
+        ECharacterCreatorParameter::BrowHeight,
+        ECharacterCreatorParameter::JawWidth,
+        ECharacterCreatorParameter::NoseWidth,
+        ECharacterCreatorParameter::EyeSize,
+        ECharacterCreatorParameter::MouthWidth
+    };
+    for (const ECharacterCreatorParameter Parameter : Parameters)
+    {
+        if (!FMath::IsNearlyEqual(Left.GetParameterValue(Parameter), Right.GetParameterValue(Parameter)))
+        {
+            AddDifference(Comparison, FName(TEXT("Parameters")));
+            break;
+        }
+    }
+    if (!Left.SkinColor.Equals(Right.SkinColor) || !Left.HairColor.Equals(Right.HairColor) || !Left.PrimaryOutfitColor.Equals(Right.PrimaryOutfitColor) || !Left.SecondaryOutfitColor.Equals(Right.SecondaryOutfitColor)) AddDifference(Comparison, FName(TEXT("Materials")));
+    if (Left.Loadout.OutfitMesh != Right.Loadout.OutfitMesh || Left.Loadout.HairMesh != Right.Loadout.HairMesh || Left.Loadout.WeaponMesh != Right.Loadout.WeaponMesh) AddDifference(Comparison, FName(TEXT("Clothing")));
+    if (Left.Equipment.MaterialSlots.Num() != Right.Equipment.MaterialSlots.Num() || Left.Equipment.Weapons.Num() != Right.Equipment.Weapons.Num()) AddDifference(Comparison, FName(TEXT("Equipment")));
+    if (Left.Animation.SourceAnimation != Right.Animation.SourceAnimation || Left.Animation.TargetAnimation != Right.Animation.TargetAnimation) AddDifference(Comparison, FName(TEXT("Animation")));
+    return Comparison;
+}
+
+FCharacterPreset UCharacterCreatorSession::CreateMergedPreset(const FGuid& BasePresetId, const FGuid& SourcePresetId, const FCharacterCreatorPresetMergeOptions& Options)
+{
+    const FCharacterPreset* BasePreset = Presets.FindByPredicate([&BasePresetId](const FCharacterPreset& Preset) { return Preset.PresetId == BasePresetId; });
+    const FCharacterPreset* SourcePreset = Presets.FindByPredicate([&SourcePresetId](const FCharacterPreset& Preset) { return Preset.PresetId == SourcePresetId; });
+    if (!BasePreset || !SourcePreset)
+    {
+        return FCharacterPreset();
+    }
+
+    FCharacterPreset Merged = *BasePreset;
+    Merged.PresetId = FGuid::NewGuid();
+    Merged.DisplayName = FText::FromString(FString::Printf(TEXT("%s + %s"), *BasePreset->DisplayName.ToString(), *SourcePreset->DisplayName.ToString()));
+    Merged.bIsDefault = false;
+    if (Options.bUseSourceBody)
+    {
+        Merged.Appearance.Height = SourcePreset->Appearance.Height;
+        Merged.Appearance.ShoulderWidth = SourcePreset->Appearance.ShoulderWidth;
+        Merged.Appearance.ArmLength = SourcePreset->Appearance.ArmLength;
+        Merged.Appearance.LegLength = SourcePreset->Appearance.LegLength;
+        Merged.Appearance.HeadScale = SourcePreset->Appearance.HeadScale;
+    }
+    if (Options.bUseSourceFace)
+    {
+        Merged.Appearance.BrowHeight = SourcePreset->Appearance.BrowHeight;
+        Merged.Appearance.JawWidth = SourcePreset->Appearance.JawWidth;
+        Merged.Appearance.NoseWidth = SourcePreset->Appearance.NoseWidth;
+        Merged.Appearance.EyeSize = SourcePreset->Appearance.EyeSize;
+        Merged.Appearance.MouthWidth = SourcePreset->Appearance.MouthWidth;
+        Merged.Appearance.AdvancedFace = SourcePreset->Appearance.AdvancedFace;
+    }
+    if (Options.bUseSourceMaterials)
+    {
+        Merged.Appearance.SkinColor = SourcePreset->Appearance.SkinColor;
+        Merged.Appearance.HairColor = SourcePreset->Appearance.HairColor;
+        Merged.Appearance.PrimaryOutfitColor = SourcePreset->Appearance.PrimaryOutfitColor;
+        Merged.Appearance.SecondaryOutfitColor = SourcePreset->Appearance.SecondaryOutfitColor;
+        Merged.Appearance.Equipment.MaterialSlots = SourcePreset->Appearance.Equipment.MaterialSlots;
+    }
+    if (Options.bUseSourceClothing)
+    {
+        Merged.Appearance.Loadout = SourcePreset->Appearance.Loadout;
+        Merged.Appearance.Clothing = SourcePreset->Appearance.Clothing;
+        Merged.Appearance.Grooming = SourcePreset->Appearance.Grooming;
+    }
+    if (Options.bUseSourceEquipment)
+    {
+        Merged.Appearance.IK = SourcePreset->Appearance.IK;
+        Merged.Appearance.Equipment.Weapons = SourcePreset->Appearance.Equipment.Weapons;
+        Merged.Appearance.Equipment.WeaponLibrary = SourcePreset->Appearance.Equipment.WeaponLibrary;
+    }
+    if (Options.bUseSourceAnimation)
+    {
+        Merged.Appearance.Animation = SourcePreset->Appearance.Animation;
+        Merged.Appearance.BlendSpace = SourcePreset->Appearance.BlendSpace;
+        Merged.Appearance.AnimationBlueprint = SourcePreset->Appearance.AnimationBlueprint;
+        Merged.Appearance.MontageCombo = SourcePreset->Appearance.MontageCombo;
+        Merged.Appearance.AnimationSet = SourcePreset->Appearance.AnimationSet;
+        Merged.Appearance.WeaponAnimationProfiles = SourcePreset->Appearance.WeaponAnimationProfiles;
+    }
+    Merged.Appearance.bHasUnsavedChanges = false;
+    Presets.Add(Merged);
+    ActivePreset = Merged;
+    SetAppearanceState(Merged.Appearance, false);
+    OnPresetChanged.Broadcast(ActivePreset);
+    return Merged;
+}
+
+void UCharacterCreatorSession::SetPresetSearchQuery(const FString& SearchQuery)
+{
+    AppearanceState.PresetManager.SearchQuery = SearchQuery;
+    AppearanceState.PresetManager.SearchQuery.TrimStartAndEndInline();
+    OnPresetChanged.Broadcast(ActivePreset);
+}
+
+void UCharacterCreatorSession::SetPresetSelection(const TArray<FGuid>& SelectedPresetIds, bool bCompareMode)
+{
+    AppearanceState.PresetManager.SelectedPresetIds = SelectedPresetIds;
+    AppearanceState.PresetManager.bCompareMode = bCompareMode;
+    OnPresetChanged.Broadcast(ActivePreset);
+}
+
+FCharacterCreatorPresetManagerState UCharacterCreatorSession::GetPresetManagerState() const
+{
+    return AppearanceState.PresetManager;
 }
 
 void UCharacterCreatorSession::SetAssetReferences(const FCharacterAssetReferences& NewReferences)

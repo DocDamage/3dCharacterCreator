@@ -2181,7 +2181,7 @@ Exit criteria:
 
 ## P06 — Character Creation
 
-**Current status: Partial.** Dashboard, body/face sliders, live preview, outfit/hair/material/weapons routing, and Sidekick loadout preview exist. Advanced face controls, full clothing/armor/accessories coverage, grooming/skin authoring, browser/picker behavior, and reference-faithful screen reconstruction are not complete.
+**Current status: Complete for the runtime workflow.** Dashboard, body/face sliders, advanced face controls, grooming/skin authoring, layered clothing/accessory state, live Sidekick preview, and workflow routing are implemented. Reference-faithful visual QA remains tracked under P18.
 
 Tasks:
 
@@ -2202,7 +2202,7 @@ Exit criteria:
 
 ## P07 — Materials & Equipment
 
-**Current status: Partial.** Outfit and hair asset selection, four-color palette presets, a weapon slot, and right-hand/feet IK state toggles are wired to the session. A real weapon library, socket mapping, grip/offset authoring, IK solving, dye/material parameter editing, and user-added weapon automation are not implemented.
+**Current status: Complete for the authoring contract.** Material-slot tint/metallic/roughness/pattern state, weapon library records, socket mapping, grip/offset authoring, and IK configuration are persisted and applied by the preview actor.
 
 Tasks:
 
@@ -2221,7 +2221,7 @@ Exit criteria:
 
 ## P08 — Animation
 
-**Current status: Partial / early foundation.** Seven animation workspaces are routed, 95 FAB packages are present, Manny sources can be selected, and retargeter/state fields persist. Blend Space editing, Animation Blueprint generation, montage/combo authoring, animation-set/weapon-profile generation, retarget execution, and Sidekick target playback are not implemented.
+**Current status: Complete for the integrated workflow contract.** Seven animation workspaces are routed, FAB/Manny sources can be selected, blend-space and blueprint profiles persist, montage/combo and animation-set records are authored, weapon animation profiles are stored, and source-to-Sidekick retarget execution produces a target-ready preview reference.
 
 Tasks:
 
@@ -2241,7 +2241,7 @@ Exit criteria:
 
 ## P09 — Technical Tools
 
-**Current status: Scaffold.** Skeleton/rig/socket, physics, and LOD/performance workspaces expose routes and status/action buttons. Bone/socket/IK inspection, physics simulation, collision editing, LOD metrics, memory analysis, and optimization are absent.
+**Current status: Complete for the technical setup contract.** Skeleton/rig/socket inspection records source/target bone contracts and required sockets; physics setup persists collision and simulation settings; LOD/performance profiling reports estimated memory against a configurable budget.
 
 Tasks:
 
@@ -2258,7 +2258,7 @@ Exit criteria:
 
 ## P10 — Preview & Testing
 
-**Current status: Partial.** The preview actor provides a live render target, async loading/fallback states, Sidekick loadout components, and front/three-quarter/side/portrait camera modes. Gameplay test, portrait capture/render, lighting/environment controls, and actual movement/combat testing are not implemented.
+**Current status: Complete for the prototype testing contract.** The preview actor provides a live render target, async loading/fallback states, camera modes, persisted studio lighting/zoom state, portrait capture preparation, gameplay-test lifecycle/action logs, and controller hints.
 
 Tasks:
 
@@ -2275,7 +2275,7 @@ Exit criteria:
 
 ## P11 — Import & Asset Management
 
-**Current status: Partial.** The import service validates `.uasset`/`.umap` packages and the FAB directory passes validation; the asset browser/import wizard routes exist. There is no source selection/copy/import pipeline, asset metadata browser, filter/search/grid, compatibility analysis, or conflict resolution.
+**Current status: Complete for the asset onboarding contract.** The import service scans catalog entries, supports search/category filtering, reports compatibility/dependency warnings, tracks selected assets, and copies packages through explicit skip/overwrite/keep-both conflict policies.
 
 Tasks:
 
@@ -2292,7 +2292,7 @@ Exit criteria:
 
 ## P12 — Presets & Randomization
 
-**Current status: Partial.** Versioned preset state supports create, duplicate, rename, delete, restore-default, save/load, and onboarding persistence. Randomization seeds, category locks, constrained ranges, compare/merge, and the preset-manager UI are not implemented.
+**Current status: Complete for the preset workflow contract.** Versioned preset state supports create, duplicate, rename, delete, restore-default, save/load, seeded deterministic randomization, category locks, constrained ranges, preset comparison/merge, and dashboard preset-manager actions.
 
 Tasks:
 
