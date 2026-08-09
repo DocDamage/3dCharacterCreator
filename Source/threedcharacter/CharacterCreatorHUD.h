@@ -7,6 +7,7 @@
 class UCharacterCreatorRootWidget;
 class UCharacterCreatorSession;
 class UCharacterCreatorSubsystem;
+class ACharacterCreatorPreviewActor;
 
 UCLASS()
 class THREEDCHARACTER_API ACharacterCreatorHUD : public AHUD
@@ -23,6 +24,9 @@ private:
 
     UPROPERTY()
     TObjectPtr<UCharacterCreatorSubsystem> CharacterCreatorSubsystem;
+
+    UPROPERTY()
+    TObjectPtr<ACharacterCreatorPreviewActor> PreviewActor;
 
     UPROPERTY()
     TObjectPtr<UCharacterCreatorRootWidget> RootWidget;

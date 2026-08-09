@@ -16,7 +16,8 @@ public class threedcharacter : ModuleRules
                 "InputCore",
                 "UMG",
                 "Slate",
-                "SlateCore"
+                "SlateCore",
+                "Json"
             });
     }
 }

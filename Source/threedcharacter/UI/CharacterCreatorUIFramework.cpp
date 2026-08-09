@@ -69,6 +69,17 @@ void UCharacterCreatorButtonWidget::SetButtonStyle(ECharacterCreatorButtonStyle 
     }
 }
 
+UCharacterCreatorCommandButtonWidget::UCharacterCreatorCommandButtonWidget(const FObjectInitializer& ObjectInitializer)
+    : Super(ObjectInitializer)
+{
+    OnClicked.AddDynamic(this, &UCharacterCreatorCommandButtonWidget::HandleClicked);
+}
+
+void UCharacterCreatorCommandButtonWidget::HandleClicked()
+{
+    OnCommand.Broadcast(CommandId);
+}
+
 UCharacterCreatorSliderWidget::UCharacterCreatorSliderWidget(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
@@ -89,6 +100,88 @@ void UCharacterCreatorTabButtonWidget::SetSelected(bool bInSelected)
 void UCharacterCreatorModalWidget::SetModalOpen(bool bOpen)
 {
     SetVisibility(bOpen ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+}
+
+void UCharacterCreatorModalManager::Initialize(UUserWidget* InHostWidget)
+{
+    HostWidget = InHostWidget;
+    CloseAllModals();
+}
+
+bool UCharacterCreatorModalManager::OpenModal(UCharacterCreatorModalWidget* Modal, UWidget* ReturnFocusWidget)
+{
+    if (!Modal || ModalStack.Contains(Modal))
+    {
+        return false;
+    }
+
+    ModalStack.Add(Modal);
+    FocusStack.Add(ReturnFocusWidget);
+    Modal->SetModalOpen(true);
+    Modal->SetKeyboardFocus();
+    return true;
+}
+
+bool UCharacterCreatorModalManager::CloseModal(UCharacterCreatorModalWidget* Modal)
+{
+    const int32 ModalIndex = ModalStack.Find(Modal);
+    if (ModalIndex == INDEX_NONE)
+    {
+        return false;
+    }
+
+    const bool bWasTopModal = ModalIndex == ModalStack.Num() - 1;
+    TWeakObjectPtr<UWidget> ReturnFocus = FocusStack.IsValidIndex(ModalIndex) ? FocusStack[ModalIndex] : nullptr;
+
+    if (ModalStack.IsValidIndex(ModalIndex))
+    {
+        ModalStack[ModalIndex]->SetModalOpen(false);
+    }
+    ModalStack.RemoveAt(ModalIndex);
+    FocusStack.RemoveAt(ModalIndex);
+
+    if (bWasTopModal)
+    {
+        if (UWidget* FocusWidget = ReturnFocus.Get())
+        {
+            UCharacterCreatorUIHelpers::FocusWidget(FocusWidget);
+        }
+    }
+    else if (ModalStack.Num() > 0 && ModalStack.Last())
+    {
+        ModalStack.Last()->SetKeyboardFocus();
+    }
+
+    return true;
+}
+
+bool UCharacterCreatorModalManager::CloseTopModal()
+{
+    return ModalStack.Num() > 0 && CloseModal(ModalStack.Last());
+}
+
+void UCharacterCreatorModalManager::CloseAllModals()
+{
+    for (UCharacterCreatorModalWidget* Modal : ModalStack)
+    {
+        if (Modal)
+        {
+            Modal->SetModalOpen(false);
+        }
+    }
+    ModalStack.Reset();
+    FocusStack.Reset();
+}
+
+void UCharacterCreatorModalManager::RestoreFocusForIndex(int32 Index)
+{
+    if (FocusStack.IsValidIndex(Index))
+    {
+        if (UWidget* FocusWidget = FocusStack[Index].Get())
+        {
+            UCharacterCreatorUIHelpers::FocusWidget(FocusWidget);
+        }
+    }
 }
 
 UCanvasPanelSlot* FCharacterCreatorUIFactory::Place(UCanvasPanel* Canvas, UWidget* Widget, const FVector2D& Position, const FVector2D& Size)
@@ -127,6 +220,15 @@ UCharacterCreatorPanelWidget* FCharacterCreatorUIFactory::MakePanel(UWidgetTree*
 UCharacterCreatorButtonWidget* FCharacterCreatorUIFactory::MakeButton(UWidgetTree* Tree, const FString& Value, ECharacterCreatorButtonStyle Style, int32 FontSize)
 {
     UCharacterCreatorButtonWidget* Result = Tree->ConstructWidget<UCharacterCreatorButtonWidget>();
+    Result->SetButtonStyle(Style);
+    Result->AddChild(MakeLabel(Tree, Value, FontSize, FCharacterCreatorUIStyle::GetPalette().Text));
+    return Result;
+}
+
+UCharacterCreatorCommandButtonWidget* FCharacterCreatorUIFactory::MakeCommandButton(UWidgetTree* Tree, const FString& Value, FName CommandId, ECharacterCreatorButtonStyle Style, int32 FontSize)
+{
+    UCharacterCreatorCommandButtonWidget* Result = Tree->ConstructWidget<UCharacterCreatorCommandButtonWidget>();
+    Result->SetCommandId(CommandId);
     Result->SetButtonStyle(Style);
     Result->AddChild(MakeLabel(Tree, Value, FontSize, FCharacterCreatorUIStyle::GetPalette().Text));
     return Result;

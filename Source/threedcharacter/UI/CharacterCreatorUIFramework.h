@@ -14,6 +14,7 @@ class UTextBlock;
 class UUserWidget;
 class UWidget;
 class UWidgetTree;
+class UCharacterCreatorModalManager;
 
 UENUM(BlueprintType)
 enum class ECharacterCreatorPanelStyle : uint8
@@ -92,6 +93,29 @@ public:
     void SetButtonStyle(ECharacterCreatorButtonStyle Style);
 };
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnCharacterCreatorCommand, FName);
+
+UCLASS(BlueprintType)
+class THREEDCHARACTER_API UCharacterCreatorCommandButtonWidget : public UCharacterCreatorButtonWidget
+{
+    GENERATED_BODY()
+
+public:
+    UCharacterCreatorCommandButtonWidget(const FObjectInitializer& ObjectInitializer);
+
+    void SetCommandId(FName InCommandId) { CommandId = InCommandId; }
+
+    FName GetCommandId() const { return CommandId; }
+
+    FOnCharacterCreatorCommand OnCommand;
+
+private:
+    UFUNCTION()
+    void HandleClicked();
+
+    FName CommandId;
+};
+
 DECLARE_MULTICAST_DELEGATE_TwoParams(FOnCharacterCreatorParameterValueChanged, ECharacterCreatorParameter, float);
 
 UCLASS(BlueprintType)
@@ -144,6 +168,36 @@ public:
     void SetModalOpen(bool bOpen);
 };
 
+UCLASS(BlueprintType)
+class THREEDCHARACTER_API UCharacterCreatorModalManager : public UObject
+{
+    GENERATED_BODY()
+
+public:
+    void Initialize(UUserWidget* InHostWidget);
+    bool OpenModal(UCharacterCreatorModalWidget* Modal, UWidget* ReturnFocusWidget);
+    bool CloseModal(UCharacterCreatorModalWidget* Modal);
+    bool CloseTopModal();
+    void CloseAllModals();
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Modal")
+    bool HasOpenModal() const { return ModalStack.Num() > 0; }
+
+    UFUNCTION(BlueprintPure, Category = "Character Creator|Modal")
+    int32 GetModalDepth() const { return ModalStack.Num(); }
+
+private:
+    void RestoreFocusForIndex(int32 Index);
+
+    UPROPERTY()
+    TObjectPtr<UUserWidget> HostWidget;
+
+    UPROPERTY()
+    TArray<TObjectPtr<UCharacterCreatorModalWidget>> ModalStack;
+
+    TArray<TWeakObjectPtr<UWidget>> FocusStack;
+};
+
 struct THREEDCHARACTER_API FCharacterCreatorUIStyle
 {
     static const FCharacterCreatorStylePalette& GetPalette();
@@ -155,6 +209,7 @@ struct THREEDCHARACTER_API FCharacterCreatorUIFactory
     static UTextBlock* MakeLabel(UWidgetTree* Tree, const FString& Value, int32 FontSize, const FLinearColor& Color);
     static UCharacterCreatorPanelWidget* MakePanel(UWidgetTree* Tree, const FLinearColor& Color);
     static UCharacterCreatorButtonWidget* MakeButton(UWidgetTree* Tree, const FString& Value, ECharacterCreatorButtonStyle Style, int32 FontSize = 12);
+    static UCharacterCreatorCommandButtonWidget* MakeCommandButton(UWidgetTree* Tree, const FString& Value, FName CommandId, ECharacterCreatorButtonStyle Style, int32 FontSize = 12);
     static UCharacterCreatorSliderWidget* MakeSlider(UWidgetTree* Tree, ECharacterCreatorParameter Parameter, float Value);
     static void AddLabel(UWidgetTree* Tree, UCanvasPanel* Canvas, const FString& Name, const FString& Value, const FVector2D& Position, const FVector2D& Size, int32 FontSize, const FLinearColor& Color);
     static void AddPanel(UWidgetTree* Tree, UCanvasPanel* Canvas, const FString& Name, const FVector2D& Position, const FVector2D& Size, const FLinearColor& Color);

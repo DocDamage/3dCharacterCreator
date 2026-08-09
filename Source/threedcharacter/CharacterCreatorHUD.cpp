@@ -3,6 +3,7 @@
 #include "Blueprint/UserWidget.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
+#include "CharacterCreatorPreviewActor.h"
 #include "UI/CharacterCreatorRootWidget.h"
 #include "UI/CharacterCreatorSession.h"
 #include "UI/CharacterCreatorSubsystem.h"
@@ -25,6 +26,24 @@ void ACharacterCreatorHUD::BeginPlay()
         return;
     }
 
+    UWorld* World = GetWorld();
+    if (World)
+    {
+        const FTransform PreviewTransform(FRotator::ZeroRotator, FVector(0.0f, 0.0f, 100.0f));
+        PreviewActor = World->SpawnActorDeferred<ACharacterCreatorPreviewActor>(
+            ACharacterCreatorPreviewActor::StaticClass(),
+            PreviewTransform,
+            this,
+            nullptr,
+            ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+
+        if (PreviewActor)
+        {
+            PreviewActor->InitializeWithSession(Session);
+            PreviewActor->FinishSpawning(PreviewTransform);
+        }
+    }
+
     RootWidget = CreateWidget<UCharacterCreatorRootWidget>(PlayerController, UCharacterCreatorRootWidget::StaticClass());
     if (!RootWidget)
     {
@@ -32,6 +51,7 @@ void ACharacterCreatorHUD::BeginPlay()
     }
 
     RootWidget->InitializeWithSession(Session);
+    RootWidget->InitializeWithPreviewActor(PreviewActor);
     RootWidget->AddToViewport(0);
 
     FInputModeUIOnly InputMode;
@@ -46,6 +66,12 @@ void ACharacterCreatorHUD::EndPlay(const EEndPlayReason::Type EndPlayReason)
     {
         RootWidget->RemoveFromParent();
         RootWidget = nullptr;
+    }
+
+    if (PreviewActor)
+    {
+        PreviewActor->Destroy();
+        PreviewActor = nullptr;
     }
 
     if (Session)

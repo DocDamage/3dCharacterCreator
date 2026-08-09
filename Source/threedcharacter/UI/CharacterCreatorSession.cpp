@@ -1,5 +1,29 @@
 #include "UI/CharacterCreatorSession.h"
 
+FCharacterAssetReferences::FCharacterAssetReferences()
+    : SkeletalMesh(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Skeletons/SKM_Default_Sidekick.SKM_Default_Sidekick")))
+    , BaseMaterial(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Materials/M_Default_Sidekick.M_Default_Sidekick")))
+    , Skeleton(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Skeletons/SKEL_Default_Sidekick.SKEL_Default_Sidekick")))
+{
+    MorphTargetNames.Add(ECharacterCreatorParameter::ArmLength, FName(TEXT("Arm")));
+    MorphTargetNames.Add(ECharacterCreatorParameter::LegLength, FName(TEXT("Leg")));
+    MorphTargetNames.Add(ECharacterCreatorParameter::JawWidth, FName(TEXT("Jaw")));
+    MorphTargetNames.Add(ECharacterCreatorParameter::EyeSize, FName(TEXT("eye")));
+}
+
+FCharacterCreatorLoadoutState::FCharacterCreatorLoadoutState()
+    : OutfitMesh(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Meshes/Outfits/Starter/SK_FANT_KNGT_17_10TORS_HU01.SK_FANT_KNGT_17_10TORS_HU01")))
+    , HairMesh(FSoftObjectPath(TEXT("/Game/Synty/SidekickCharacters/Resources/Meshes/Species/Humans/SK_HUMN_BASE_01_02HAIR_HU01.SK_HUMN_BASE_01_02HAIR_HU01")))
+{
+}
+
+FCharacterCreatorAnimationState::FCharacterCreatorAnimationState()
+    : SourceAnimation(FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Animations/Manny/MM_Idle.MM_Idle")))
+    , SourceSkeleton(FSoftObjectPath(TEXT("/Game/FreeAnimationsPack/Demo/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin")))
+    , State(ECharacterCreatorAnimationState::SourceReady)
+{
+}
+
 bool FCharacterAssetReferences::IsEmpty() const
 {
     return SkeletalMesh.IsNull()
@@ -121,6 +145,10 @@ void UCharacterCreatorSession::SetAppearanceState(const FCharacterAppearanceStat
     AppearanceState = NewState;
     AppearanceState.Version = FCharacterAppearanceState::CurrentVersion;
     AppearanceState.bHasUnsavedChanges = bMarkDirty;
+    if (!bMarkDirty)
+    {
+        SavedAppearanceState = AppearanceState;
+    }
     OnAppearanceChanged.Broadcast(AppearanceState);
 }
 
@@ -131,9 +159,160 @@ void UCharacterCreatorSession::ResetAppearance()
     OnAppearanceChanged.Broadcast(AppearanceState);
 }
 
+void UCharacterCreatorSession::ApplyAppearanceChanges()
+{
+    SavedAppearanceState = AppearanceState;
+    SavedAppearanceState.bHasUnsavedChanges = false;
+    AppearanceState.bHasUnsavedChanges = false;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(FText::FromString(TEXT("Character changes applied")));
+}
+
+void UCharacterCreatorSession::RevertAppearanceChanges()
+{
+    AppearanceState = SavedAppearanceState;
+    AppearanceState.Version = FCharacterAppearanceState::CurrentVersion;
+    AppearanceState.bHasUnsavedChanges = false;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    SetStatusMessage(FText::FromString(TEXT("Character changes reverted")));
+}
+
 void UCharacterCreatorSession::SetActivePreset(const FCharacterPreset& NewPreset)
 {
     ActivePreset = NewPreset;
+    SetAppearanceState(NewPreset.Appearance, false);
+    OnPresetChanged.Broadcast(ActivePreset);
+}
+
+void UCharacterCreatorSession::InitializeDefaults()
+{
+    AppearanceState = FCharacterAppearanceState();
+    AppearanceState.bHasUnsavedChanges = false;
+    SavedAppearanceState = AppearanceState;
+
+    ActivePreset = FCharacterPreset();
+    ActivePreset.DisplayName = FText::FromString(TEXT("Default Sidekick"));
+    ActivePreset.Description = FText::FromString(TEXT("Default Sidekick creator starting point"));
+    ActivePreset.Appearance = AppearanceState;
+    ActivePreset.bIsDefault = true;
+
+    Presets.Reset();
+    Presets.Add(ActivePreset);
+    OnAppearanceChanged.Broadcast(AppearanceState);
+    OnPresetChanged.Broadcast(ActivePreset);
+}
+
+FCharacterPreset UCharacterCreatorSession::CreatePresetFromCurrent(const FText& DisplayName, const FText& Description)
+{
+    FCharacterPreset NewPreset;
+    NewPreset.DisplayName = DisplayName.IsEmpty() ? FText::FromString(TEXT("Untitled Preset")) : DisplayName;
+    NewPreset.Description = Description;
+    NewPreset.Appearance = AppearanceState;
+    NewPreset.Appearance.bHasUnsavedChanges = false;
+    Presets.Add(NewPreset);
+    ActivePreset = NewPreset;
+    OnPresetChanged.Broadcast(ActivePreset);
+    return NewPreset;
+}
+
+bool UCharacterCreatorSession::DuplicatePreset(const FGuid& PresetId)
+{
+    for (const FCharacterPreset& Preset : Presets)
+    {
+        if (Preset.PresetId == PresetId)
+        {
+            FCharacterPreset Duplicate = Preset;
+            Duplicate.PresetId = FGuid::NewGuid();
+            Duplicate.DisplayName = FText::FromString(FString::Printf(TEXT("%s Copy"), *Preset.DisplayName.ToString()));
+            Duplicate.bIsDefault = false;
+            Presets.Add(Duplicate);
+            ActivePreset = Duplicate;
+            OnPresetChanged.Broadcast(ActivePreset);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool UCharacterCreatorSession::RenamePreset(const FGuid& PresetId, const FText& NewDisplayName)
+{
+    if (NewDisplayName.IsEmpty())
+    {
+        return false;
+    }
+
+    for (FCharacterPreset& Preset : Presets)
+    {
+        if (Preset.PresetId == PresetId)
+        {
+            Preset.DisplayName = NewDisplayName;
+            if (ActivePreset.PresetId == PresetId)
+            {
+                ActivePreset = Preset;
+            }
+            OnPresetChanged.Broadcast(ActivePreset);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool UCharacterCreatorSession::DeletePreset(const FGuid& PresetId)
+{
+    for (int32 Index = 0; Index < Presets.Num(); ++Index)
+    {
+        if (Presets[Index].PresetId == PresetId)
+        {
+            if (Presets[Index].bIsDefault)
+            {
+                RestoreDefaultPreset();
+                return true;
+            }
+
+            Presets.RemoveAt(Index);
+            if (ActivePreset.PresetId == PresetId)
+            {
+                RestoreDefaultPreset();
+            }
+            else
+            {
+                OnPresetChanged.Broadcast(ActivePreset);
+            }
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void UCharacterCreatorSession::RestoreDefaultPreset()
+{
+    for (const FCharacterPreset& Preset : Presets)
+    {
+        if (Preset.bIsDefault)
+        {
+            ActivePreset = Preset;
+            SetAppearanceState(Preset.Appearance, false);
+            OnPresetChanged.Broadcast(ActivePreset);
+            return;
+        }
+    }
+
+    InitializeDefaults();
+}
+
+void UCharacterCreatorSession::SetPresetLibrary(const TArray<FCharacterPreset>& NewPresets, const FCharacterPreset& NewActivePreset)
+{
+    Presets = NewPresets;
+    ActivePreset = NewActivePreset;
+    if (Presets.Num() == 0)
+    {
+        InitializeDefaults();
+        return;
+    }
+
     OnPresetChanged.Broadcast(ActivePreset);
 }
 
@@ -151,6 +330,226 @@ void UCharacterCreatorSession::SetAssetReferences(const FCharacterAssetReference
     OnAppearanceChanged.Broadcast(AppearanceState);
 }
 
+void UCharacterCreatorSession::SetAssetLoadState(ECharacterCreatorAssetLoadState NewState)
+{
+    if (AppearanceState.Assets.LoadState == NewState)
+    {
+        return;
+    }
+
+    AppearanceState.Assets.LoadState = NewState;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetLoadoutAsset(ECharacterCreatorLoadoutSlot Slot, const FSoftObjectPath& AssetPath)
+{
+    FSoftObjectPath* TargetPath = nullptr;
+    switch (Slot)
+    {
+    case ECharacterCreatorLoadoutSlot::Outfit:
+        TargetPath = &AppearanceState.Loadout.OutfitMesh;
+        break;
+    case ECharacterCreatorLoadoutSlot::Hair:
+        TargetPath = &AppearanceState.Loadout.HairMesh;
+        break;
+    case ECharacterCreatorLoadoutSlot::Weapon:
+        TargetPath = &AppearanceState.Loadout.WeaponMesh;
+        break;
+    default:
+        break;
+    }
+
+    if (!TargetPath || *TargetPath == AssetPath)
+    {
+        return;
+    }
+
+    *TargetPath = AssetPath;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FSoftObjectPath UCharacterCreatorSession::GetLoadoutAsset(ECharacterCreatorLoadoutSlot Slot) const
+{
+    switch (Slot)
+    {
+    case ECharacterCreatorLoadoutSlot::Outfit:
+        return AppearanceState.Loadout.OutfitMesh;
+    case ECharacterCreatorLoadoutSlot::Hair:
+        return AppearanceState.Loadout.HairMesh;
+    case ECharacterCreatorLoadoutSlot::Weapon:
+        return AppearanceState.Loadout.WeaponMesh;
+    default:
+        return FSoftObjectPath();
+    }
+}
+
+void UCharacterCreatorSession::SetColorTarget(ECharacterCreatorColorTarget Target, const FLinearColor& NewColor)
+{
+    FLinearColor* TargetColor = nullptr;
+    switch (Target)
+    {
+    case ECharacterCreatorColorTarget::Skin:
+        TargetColor = &AppearanceState.SkinColor;
+        break;
+    case ECharacterCreatorColorTarget::Hair:
+        TargetColor = &AppearanceState.HairColor;
+        break;
+    case ECharacterCreatorColorTarget::PrimaryOutfit:
+        TargetColor = &AppearanceState.PrimaryOutfitColor;
+        break;
+    case ECharacterCreatorColorTarget::SecondaryOutfit:
+        TargetColor = &AppearanceState.SecondaryOutfitColor;
+        break;
+    default:
+        break;
+    }
+
+    if (!TargetColor || TargetColor->Equals(NewColor))
+    {
+        return;
+    }
+
+    *TargetColor = NewColor;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+FLinearColor UCharacterCreatorSession::GetColorTarget(ECharacterCreatorColorTarget Target) const
+{
+    switch (Target)
+    {
+    case ECharacterCreatorColorTarget::Skin:
+        return AppearanceState.SkinColor;
+    case ECharacterCreatorColorTarget::Hair:
+        return AppearanceState.HairColor;
+    case ECharacterCreatorColorTarget::PrimaryOutfit:
+        return AppearanceState.PrimaryOutfitColor;
+    case ECharacterCreatorColorTarget::SecondaryOutfit:
+        return AppearanceState.SecondaryOutfitColor;
+    default:
+        return FLinearColor::White;
+    }
+}
+
+void UCharacterCreatorSession::SetIKEnabled(ECharacterCreatorIKTarget Target, bool bEnabled)
+{
+    bool* TargetValue = nullptr;
+    switch (Target)
+    {
+    case ECharacterCreatorIKTarget::RightHand:
+        TargetValue = &AppearanceState.IK.bRightHandIKEnabled;
+        break;
+    case ECharacterCreatorIKTarget::Feet:
+        TargetValue = &AppearanceState.IK.bFeetIKEnabled;
+        break;
+    default:
+        break;
+    }
+
+    if (!TargetValue || *TargetValue == bEnabled)
+    {
+        return;
+    }
+
+    *TargetValue = bEnabled;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+bool UCharacterCreatorSession::IsIKEnabled(ECharacterCreatorIKTarget Target) const
+{
+    switch (Target)
+    {
+    case ECharacterCreatorIKTarget::RightHand:
+        return AppearanceState.IK.bRightHandIKEnabled;
+    case ECharacterCreatorIKTarget::Feet:
+        return AppearanceState.IK.bFeetIKEnabled;
+    default:
+        return false;
+    }
+}
+
+void UCharacterCreatorSession::SetAnimationSource(const FSoftObjectPath& SourceAnimation, const FSoftObjectPath& SourceSkeleton)
+{
+    if (AppearanceState.Animation.SourceAnimation == SourceAnimation && AppearanceState.Animation.SourceSkeleton == SourceSkeleton)
+    {
+        return;
+    }
+
+    AppearanceState.Animation.SourceAnimation = SourceAnimation;
+    AppearanceState.Animation.SourceSkeleton = SourceSkeleton;
+    AppearanceState.Animation.State = SourceAnimation.IsNull() ? ECharacterCreatorAnimationState::Unassigned : ECharacterCreatorAnimationState::SourceReady;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetAnimationRetargeter(const FSoftObjectPath& Retargeter)
+{
+    if (AppearanceState.Animation.Retargeter == Retargeter)
+    {
+        return;
+    }
+
+    AppearanceState.Animation.Retargeter = Retargeter;
+    AppearanceState.Animation.State = Retargeter.IsNull() ? ECharacterCreatorAnimationState::SourceReady : ECharacterCreatorAnimationState::Retargeting;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetAnimationTarget(const FSoftObjectPath& TargetAnimation)
+{
+    if (AppearanceState.Animation.TargetAnimation == TargetAnimation)
+    {
+        return;
+    }
+
+    AppearanceState.Animation.TargetAnimation = TargetAnimation;
+    AppearanceState.Animation.State = TargetAnimation.IsNull() ? ECharacterCreatorAnimationState::Retargeting : ECharacterCreatorAnimationState::TargetReady;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::SetAnimationState(ECharacterCreatorAnimationState NewState)
+{
+    if (AppearanceState.Animation.State == NewState)
+    {
+        return;
+    }
+
+    AppearanceState.Animation.State = NewState;
+    AppearanceState.bHasUnsavedChanges = true;
+    OnAppearanceChanged.Broadcast(AppearanceState);
+}
+
+void UCharacterCreatorSession::AdvanceOnboarding()
+{
+    if (OnboardingState.bCompleted || OnboardingState.bSkipped)
+    {
+        return;
+    }
+
+    ++OnboardingState.CurrentStep;
+    if (OnboardingState.CurrentStep >= 5)
+    {
+        OnboardingState.CurrentStep = 5;
+        OnboardingState.bCompleted = true;
+    }
+    SetStatusMessage(FText::FromString(FString::Printf(TEXT("Onboarding step %d of 5"), OnboardingState.CurrentStep)));
+}
+
+void UCharacterCreatorSession::SkipOnboarding()
+{
+    OnboardingState.bSkipped = true;
+    SetStatusMessage(FText::FromString(TEXT("Onboarding skipped; you can reopen it from Settings")));
+}
+
+void UCharacterCreatorSession::ResetOnboarding()
+{
+    OnboardingState = FCharacterCreatorOnboardingState();
+    SetStatusMessage(FText::FromString(TEXT("Onboarding restarted")));
+}
+
 void UCharacterCreatorSession::SetStatusMessage(const FText& NewMessage)
 {
     if (StatusMessage.EqualTo(NewMessage))
@@ -162,10 +561,17 @@ void UCharacterCreatorSession::SetStatusMessage(const FText& NewMessage)
     OnStatusChanged.Broadcast(StatusMessage);
 }
 
+void UCharacterCreatorSession::SetImportProgress(const FCharacterCreatorImportProgress& NewProgress)
+{
+    ImportProgress = NewProgress;
+    OnImportProgressChanged.Broadcast(ImportProgress);
+}
+
 void UCharacterCreatorSession::Shutdown()
 {
     OnScreenChanged.Clear();
     OnStatusChanged.Clear();
     OnAppearanceChanged.Clear();
     OnPresetChanged.Clear();
+    OnImportProgressChanged.Clear();
 }
