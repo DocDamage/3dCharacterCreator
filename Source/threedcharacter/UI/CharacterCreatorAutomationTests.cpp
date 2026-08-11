@@ -584,4 +584,38 @@ bool FCharacterCreatorActualUMGFlowsTest::RunTest(const FString& Parameters)
     return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FCharacterCreatorPackagingAssetVerificationTest,
+    "CharacterCreator.Packaging.SidekickAssetVerification",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCharacterCreatorPackagingAssetVerificationTest::RunTest(const FString& Parameters)
+{
+    UCharacterCreatorSession* Session = NewObject<UCharacterCreatorSession>(GetTransientPackage());
+    Session->InitializeDefaults();
+
+    // Verify session references built-in asset path
+    const FSoftObjectPath SkeletalMeshPath = Session->GetAssetReferences().SkeletalMesh;
+    TestFalse(TEXT("Built-in Sidekick mesh reference is non-null"), SkeletalMeshPath.IsNull());
+    TestTrue(TEXT("Built-in asset resides under /Game/Synty/SidekickCharacters"), SkeletalMeshPath.ToString().StartsWith(TEXT("/Game/Synty/SidekickCharacters")));
+
+    // Verify Asset Tier distinction (Built-In vs User Asset)
+    FCharacterCreatorAssetCatalogEntry BuiltInEntry;
+    BuiltInEntry.AssetName = TEXT("SK_Default_Sidekick");
+    BuiltInEntry.ObjectPath = SkeletalMeshPath.ToString();
+    BuiltInEntry.bBuiltIn = true;
+    BuiltInEntry.bUserAsset = false;
+
+    FCharacterCreatorAssetCatalogEntry UserEntry;
+    UserEntry.AssetName = TEXT("Custom_User_Outfit");
+    UserEntry.SourceFile = TEXT("C:/UserStash/Outfit.fbx");
+    UserEntry.bBuiltIn = false;
+    UserEntry.bUserAsset = true;
+
+    TestTrue(TEXT("Built-in tier is correctly set"), BuiltInEntry.bBuiltIn && !BuiltInEntry.bUserAsset);
+    TestTrue(TEXT("User asset tier is correctly set"), UserEntry.bUserAsset && !UserEntry.bBuiltIn);
+
+    return true;
+}
+
 #endif

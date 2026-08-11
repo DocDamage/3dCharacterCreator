@@ -92,6 +92,21 @@ struct THREEDCHARACTER_API FCharacterCreatorAssetCatalogEntry
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
     bool bFavorite = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    bool bBuiltIn = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    bool bUserAsset = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    bool bArchived = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    TArray<FString> Tags;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Creator|Import")
+    FString ThumbnailPath;
 };
 
 USTRUCT(BlueprintType)

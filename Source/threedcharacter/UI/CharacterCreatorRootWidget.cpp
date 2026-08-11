@@ -320,6 +320,25 @@ void UCharacterCreatorRootWidget::BuildLayout()
             Place(GlobalOverlay, Button, Action.Get<3>(), FVector2D(80.0f, 28.0f));
         }
 
+    const TArray<TTuple<const TCHAR*, const TCHAR*, FName>> TopTabs = {
+        {TEXT("DASHBOARD"), TEXT("dashboard"), FName(TEXT("back_dashboard"))},
+        {TEXT("CREATOR"), TEXT("body"), FName(TEXT("body"))},
+        {TEXT("SIDEKICK"), TEXT("sidekick_library"), FName(TEXT("sidekick_library"))},
+        {TEXT("MY ASSETS"), TEXT("my_assets"), FName(TEXT("my_assets"))},
+        {TEXT("INSPECTOR"), TEXT("inspector"), FName(TEXT("inspector"))},
+        {TEXT("ANIMATION"), TEXT("animation_overview"), FName(TEXT("animation_overview"))},
+        {TEXT("EXPORT"), TEXT("export"), FName(TEXT("export"))},
+        {TEXT("SETTINGS"), TEXT("settings"), FName(TEXT("global_settings"))}
+    };
+    float TabX = 260.0f;
+    for (const TTuple<const TCHAR*, const TCHAR*, FName>& Tab : TopTabs)
+    {
+        UCharacterCreatorCommandButtonWidget* TabButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, Tab.Get<0>(), Tab.Get<2>(), ECharacterCreatorButtonStyle::Secondary, 9);
+        TabButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
+        Place(GlobalOverlay, TabButton, FVector2D(TabX, 14.0f), FVector2D(100.0f, 30.0f));
+        TabX += 104.0f;
+    }
+
         UCharacterCreatorCommandButtonWidget* AssetTrayButton = FCharacterCreatorUIFactory::MakeCommandButton(WidgetTree, TEXT("OPEN ASSET BROWSER"), FName(TEXT("tray_assets")), ECharacterCreatorButtonStyle::Secondary, 9);
         AssetTrayButton->OnCommand.AddUObject(this, &UCharacterCreatorRootWidget::HandleWorkflowCommand);
         Place(GlobalOverlay, AssetTrayButton, FVector2D(360.0f, 776.0f), FVector2D(170.0f, 28.0f));
